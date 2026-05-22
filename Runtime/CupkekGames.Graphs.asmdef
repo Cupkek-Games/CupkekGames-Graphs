@@ -1,0 +1,16 @@
+{
+    "name": "CupkekGames.Graphs",
+    "rootNamespace": "",
+    "references": [
+        "GUID:99af10b529824702946fb144b93bed73"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

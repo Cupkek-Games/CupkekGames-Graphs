@@ -1,0 +1,348 @@
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace CupkekGames.Graphs.Editor
+{
+    /// <summary>
+    /// Coloured rounded rectangle drawn behind a cluster of nodes for visual
+    /// organisation. Drag the title bar to move; drag the bottom-right
+    /// handle to resize; click the title to rename; "×" deletes. Groups live
+    /// in the canvas's group layer so they paint behind edges and nodes.
+    /// </summary>
+    public class GroupElement : VisualElement
+    {
+        const float TitleBarHeight = 22f;
+        const float ResizeHandleSize = 14f;
+        const float CornerRadius = 6f;
+        const float MinWidth = 160f;
+        const float MinHeight = 100f;
+
+        static readonly Color BorderColor         = GraphTheme.GroupBorder;
+        static readonly Color SelectedBorderColor = GraphTheme.SelectionAccentStrong;
+        static readonly Color TitleColor          = GraphTheme.GroupTitleBg;
+        static readonly Color ResizeHandleColor   = GraphTheme.GroupResizeHandle;
+
+        readonly GraphCanvas _canvas;
+        readonly GraphGroup _group;
+
+        readonly VisualElement _titleBar;
+        readonly Label _titleLabel;
+        readonly TextField _titleField;
+        readonly VisualElement _resizeHandle;
+
+        bool _dragging;
+        bool _resizing;
+        int _pointerId = -1;
+
+        public GraphGroup Group => _group;
+        public bool IsSelected { get; private set; }
+
+        internal void SetSelected(bool selected)
+        {
+            if (IsSelected == selected) return;
+            IsSelected = selected;
+            UpdateBorderColors();
+        }
+
+        void UpdateBorderColors()
+        {
+            var c = IsSelected ? SelectedBorderColor : BorderColor;
+            style.borderTopColor = c;
+            style.borderBottomColor = c;
+            style.borderLeftColor = c;
+            style.borderRightColor = c;
+            float w = IsSelected ? 2f : 1f;
+            style.borderTopWidth = w;
+            style.borderBottomWidth = w;
+            style.borderLeftWidth = w;
+            style.borderRightWidth = w;
+        }
+
+        public GroupElement(GraphCanvas canvas, GraphGroup group)
+        {
+            _canvas = canvas;
+            _group = group;
+
+            AddToClassList("cgg-graph-group");
+            style.position = Position.Absolute;
+            style.backgroundColor = group.Color;
+            style.borderTopLeftRadius = CornerRadius;
+            style.borderTopRightRadius = CornerRadius;
+            style.borderBottomLeftRadius = CornerRadius;
+            style.borderBottomRightRadius = CornerRadius;
+            style.borderTopWidth = 1f;
+            style.borderBottomWidth = 1f;
+            style.borderLeftWidth = 1f;
+            style.borderRightWidth = 1f;
+            style.borderTopColor = BorderColor;
+            style.borderBottomColor = BorderColor;
+            style.borderLeftColor = BorderColor;
+            style.borderRightColor = BorderColor;
+
+            // -- Title bar --
+            _titleBar = new VisualElement
+            {
+                style =
+                {
+                    height = TitleBarHeight,
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    paddingLeft = 8f,
+                    paddingRight = 4f,
+                    backgroundColor = TitleColor,
+                    borderTopLeftRadius = CornerRadius,
+                    borderTopRightRadius = CornerRadius,
+                },
+            };
+            Add(_titleBar);
+
+            _titleLabel = new Label(group.Title)
+            {
+                style =
+                {
+                    color = Color.white,
+                    fontSize = 12,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    flexGrow = 1f,
+                },
+            };
+            _titleLabel.RegisterCallback<MouseDownEvent>(OnTitleLabelMouseDown);
+            _titleBar.Add(_titleLabel);
+
+            _titleField = new TextField { value = group.Title };
+            _titleField.style.display = DisplayStyle.None;
+            _titleField.style.flexGrow = 1f;
+            _titleField.RegisterCallback<FocusOutEvent>(_ => CommitTitleEdit());
+            _titleField.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                {
+                    CommitTitleEdit();
+                    evt.StopPropagation();
+                }
+                else if (evt.keyCode == KeyCode.Escape)
+                {
+                    CancelTitleEdit();
+                    evt.StopPropagation();
+                }
+            });
+            _titleBar.Add(_titleField);
+
+            var closeButton = new Button(DeleteGroup) { text = "×" };
+            closeButton.style.width = 18f;
+            closeButton.style.height = 18f;
+            closeButton.style.paddingLeft = 0f;
+            closeButton.style.paddingRight = 0f;
+            closeButton.style.paddingTop = 0f;
+            closeButton.style.paddingBottom = 0f;
+            closeButton.style.marginLeft = 4f;
+            closeButton.style.marginRight = 0f;
+            _titleBar.Add(closeButton);
+
+            // Drag on title bar — pointer events on _titleBar move the whole group.
+            _titleBar.RegisterCallback<PointerDownEvent>(OnDragPointerDown);
+            _titleBar.RegisterCallback<PointerMoveEvent>(OnDragPointerMove);
+            _titleBar.RegisterCallback<PointerUpEvent>(OnDragPointerUp);
+            _titleBar.RegisterCallback<PointerCaptureOutEvent>(OnDragPointerCaptureOut);
+
+            // -- Resize handle (bottom-right corner) --
+            _resizeHandle = new VisualElement
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    right = 2f,
+                    bottom = 2f,
+                    width = ResizeHandleSize,
+                    height = ResizeHandleSize,
+                    backgroundColor = ResizeHandleColor,
+                    borderBottomRightRadius = CornerRadius - 2f,
+                },
+            };
+            _resizeHandle.RegisterCallback<PointerDownEvent>(OnResizePointerDown);
+            _resizeHandle.RegisterCallback<PointerMoveEvent>(OnResizePointerMove);
+            _resizeHandle.RegisterCallback<PointerUpEvent>(OnResizePointerUp);
+            _resizeHandle.RegisterCallback<PointerCaptureOutEvent>(OnResizePointerCaptureOut);
+            Add(_resizeHandle);
+
+            ApplyBounds();
+        }
+
+        // ---------------------------------------------------------------
+        // Bounds
+        // ---------------------------------------------------------------
+
+        public void ApplyBounds()
+        {
+            if (_group == null) return;
+            style.left = _group.Bounds.x;
+            style.top = _group.Bounds.y;
+            style.width = _group.Bounds.width;
+            style.height = _group.Bounds.height;
+        }
+
+        // ---------------------------------------------------------------
+        // Title editing
+        // ---------------------------------------------------------------
+
+        void OnTitleLabelMouseDown(MouseDownEvent evt)
+        {
+            if (evt.button != 0 || evt.clickCount != 2) return; // double-click only
+            StartTitleEdit();
+            evt.StopPropagation();
+        }
+
+        void StartTitleEdit()
+        {
+            _titleField.SetValueWithoutNotify(_group.Title);
+            _titleField.style.display = DisplayStyle.Flex;
+            _titleLabel.style.display = DisplayStyle.None;
+            _titleField.Focus();
+        }
+
+        void CommitTitleEdit()
+        {
+            if (_canvas.Asset != null)
+                Undo.RegisterCompleteObjectUndo(_canvas.Asset, "Rename Group");
+
+            _group.Title = _titleField.value;
+            _titleLabel.text = _group.Title;
+            _titleField.style.display = DisplayStyle.None;
+            _titleLabel.style.display = DisplayStyle.Flex;
+
+            if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
+        }
+
+        void CancelTitleEdit()
+        {
+            _titleField.style.display = DisplayStyle.None;
+            _titleLabel.style.display = DisplayStyle.Flex;
+        }
+
+        // ---------------------------------------------------------------
+        // Drag (move whole group)
+        // ---------------------------------------------------------------
+
+        void OnDragPointerDown(PointerDownEvent evt)
+        {
+            if (evt.button != (int)MouseButton.LeftMouse || evt.altKey) return;
+            if (_dragging || _resizing) return;
+
+            // Selection update first — same modifier rules as nodes.
+            if (evt.shiftKey) _canvas.Selection.Add(this);
+            else if (evt.ctrlKey || evt.commandKey) _canvas.Selection.Toggle(this);
+            else if (!_canvas.Selection.Contains(this)) _canvas.Selection.SetTo(this);
+            _canvas.Focus();
+
+            _dragging = true;
+            _pointerId = evt.pointerId;
+            _titleBar.CapturePointer(evt.pointerId);
+
+            if (_canvas.Asset != null)
+                Undo.RegisterCompleteObjectUndo(_canvas.Asset, "Move Group");
+
+            evt.StopPropagation();
+        }
+
+        void OnDragPointerMove(PointerMoveEvent evt)
+        {
+            if (!_dragging || evt.pointerId != _pointerId) return;
+
+            float zoom = _canvas.ViewZoom;
+            Vector2 worldDelta = (Vector2)evt.deltaPosition / zoom;
+            var b = _group.Bounds;
+            b.position += worldDelta;
+            _group.Bounds = b;
+            ApplyBounds();
+
+            evt.StopPropagation();
+        }
+
+        void OnDragPointerUp(PointerUpEvent evt)
+        {
+            if (!_dragging || evt.pointerId != _pointerId) return;
+            EndDrag();
+            evt.StopPropagation();
+        }
+
+        void OnDragPointerCaptureOut(PointerCaptureOutEvent evt)
+        {
+            if (_dragging && evt.pointerId == _pointerId) EndDrag();
+        }
+
+        void EndDrag()
+        {
+            if (_titleBar.HasPointerCapture(_pointerId))
+                _titleBar.ReleasePointer(_pointerId);
+            _dragging = false;
+            _pointerId = -1;
+            if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
+        }
+
+        // ---------------------------------------------------------------
+        // Resize (drag bottom-right handle)
+        // ---------------------------------------------------------------
+
+        void OnResizePointerDown(PointerDownEvent evt)
+        {
+            if (evt.button != (int)MouseButton.LeftMouse || evt.altKey) return;
+            if (_dragging || _resizing) return;
+
+            _resizing = true;
+            _pointerId = evt.pointerId;
+            _resizeHandle.CapturePointer(evt.pointerId);
+
+            if (_canvas.Asset != null)
+                Undo.RegisterCompleteObjectUndo(_canvas.Asset, "Resize Group");
+
+            evt.StopPropagation();
+        }
+
+        void OnResizePointerMove(PointerMoveEvent evt)
+        {
+            if (!_resizing || evt.pointerId != _pointerId) return;
+
+            float zoom = _canvas.ViewZoom;
+            Vector2 worldDelta = (Vector2)evt.deltaPosition / zoom;
+
+            var b = _group.Bounds;
+            b.width = Mathf.Max(MinWidth, b.width + worldDelta.x);
+            b.height = Mathf.Max(MinHeight, b.height + worldDelta.y);
+            _group.Bounds = b;
+            ApplyBounds();
+
+            evt.StopPropagation();
+        }
+
+        void OnResizePointerUp(PointerUpEvent evt)
+        {
+            if (!_resizing || evt.pointerId != _pointerId) return;
+            EndResize();
+            evt.StopPropagation();
+        }
+
+        void OnResizePointerCaptureOut(PointerCaptureOutEvent evt)
+        {
+            if (_resizing && evt.pointerId == _pointerId) EndResize();
+        }
+
+        void EndResize()
+        {
+            if (_resizeHandle.HasPointerCapture(_pointerId))
+                _resizeHandle.ReleasePointer(_pointerId);
+            _resizing = false;
+            _pointerId = -1;
+            if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
+        }
+
+        // ---------------------------------------------------------------
+        // Delete
+        // ---------------------------------------------------------------
+
+        void DeleteGroup()
+        {
+            _canvas.DeleteGroup(_group);
+        }
+    }
+}

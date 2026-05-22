@@ -1,0 +1,22 @@
+{
+  "name": "com.cupkekgames.graphs",
+  "displayName": "CupkekGames Graphs",
+  "version": "0.1.0",
+  "author": {
+    "name": "CupkekGames",
+    "url": "https://www.docs.cupkek.games"
+  },
+  "unity": "6000.0",
+  "documentationUrl": "https://docs.cupkek.games/",
+  "description": "Generic graph editing foundation. GraphAssetSO + GraphNodeSO + GraphConnection runtime abstractions plus a fully custom UI Toolkit canvas editor (no UnityEditor.Experimental.GraphView dependency). Foundation for behaviour trees, navigation graphs, and other graph-shaped CupkekGames features.",
+  "keywords": [
+    "Graph",
+    "Editor",
+    "UIToolkit",
+    "CupkekGames"
+  ],
+  "dependencies": {
+    "com.cupkekgames.data": "0.1.4",
+    "com.cupkekgames.editorui": "0.1.0"
+  }
+}

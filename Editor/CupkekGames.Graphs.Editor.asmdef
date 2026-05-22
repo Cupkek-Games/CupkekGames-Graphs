@@ -1,0 +1,20 @@
+{
+    "name": "CupkekGames.Graphs.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:86cfcabd1963458087b4d0562691da24",
+        "GUID:99af10b529824702946fb144b93bed73",
+        "GUID:8f77594f32d14e40b107e8394633124d"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
