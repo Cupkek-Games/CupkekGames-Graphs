@@ -75,15 +75,11 @@ namespace CupkekGames.Graphs.Editor
         [OnOpenAsset(1)]
         public static bool OnOpenAsset(int instanceId, int line)
         {
-            // InstanceIDToObject(int) was deprecated in Unity 6 in favour of
-            // EntityIdToObject(EntityId). EntityId's exact shape is moving
-            // (int wrapper now, may widen later) so we suppress the warning
-            // and stick with the int overload until the API stabilises — the
-            // [OnOpenAsset] callback still hands us an int, so converting
-            // either way buys nothing.
-#pragma warning disable CS0618
-            var obj = EditorUtility.InstanceIDToObject(instanceId);
-#pragma warning restore CS0618
+            // Unity 6.6 alpha promoted InstanceIDToObject(int) deprecation to
+            // error-level (CS0619), which #pragma warning disable cannot
+            // suppress. Reflection sidesteps the compile-time obsolete check;
+            // the underlying method still exists and works at runtime.
+            var obj = _instanceIDToObject?.Invoke(null, new object[] { instanceId }) as UnityEngine.Object;
             if (obj is GraphAssetSO graph)
             {
                 Open(graph);
@@ -91,6 +87,12 @@ namespace CupkekGames.Graphs.Editor
             }
             return false;
         }
+
+        private static readonly System.Reflection.MethodInfo _instanceIDToObject =
+            typeof(EditorUtility).GetMethod(
+                nameof(EditorUtility.InstanceIDToObject),
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                null, new[] { typeof(int) }, null);
 
         [MenuItem("Window/CupkekGames/Graphs/Graph Editor")]
         public static void OpenEmpty() => Open(null);
