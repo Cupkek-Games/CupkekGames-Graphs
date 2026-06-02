@@ -87,6 +87,20 @@ namespace CupkekGames.Graphs.Editor
         /// </summary>
         public void NotifyGraphChanged() => RaiseGraphChanged();
 
+        /// <summary>
+        /// Fires when something on the canvas asks to descend into a sub-graph
+        /// (e.g. double-clicking an <see cref="ISubGraphNode"/>). The canvas does
+        /// NOT switch assets itself — the host <see cref="GraphEditorWindow"/>
+        /// subscribes and pushes the child onto its nav stack.
+        /// </summary>
+        public event System.Action<GraphAssetSO> DescendRequested;
+
+        /// <summary>Raise <see cref="DescendRequested"/> for <paramref name="child"/> (ignored if null).</summary>
+        public void RequestDescend(GraphAssetSO child)
+        {
+            if (child != null) DescendRequested?.Invoke(child);
+        }
+
         /// <summary>Every node element currently mounted on the canvas, in no particular order.</summary>
         public IEnumerable<NodeElement> NodeElements => _nodeElements.Values;
 

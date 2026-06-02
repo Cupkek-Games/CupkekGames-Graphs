@@ -159,6 +159,21 @@ namespace CupkekGames.Graphs.Editor
             ApplyPosition();
 
             this.AddManipulator(new NodeDragManipulator());
+
+            // Double-click a sub-graph node to descend into its referenced graph.
+            // Uses MouseDownEvent (not ClickEvent) to match GroupElement's title
+            // double-click: the attached NodeDragManipulator captures the pointer,
+            // which suppresses synthesized ClickEvents. Nodes that aren't
+            // ISubGraphNode (or have no graph assigned) fall through to drag/select.
+            RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button != 0 || evt.clickCount != 2) return; // double-click only
+                if (_node is ISubGraphNode sg && sg.SubGraph != null)
+                {
+                    _canvas?.RequestDescend(sg.SubGraph);
+                    evt.StopPropagation();
+                }
+            });
         }
 
         /// <summary>

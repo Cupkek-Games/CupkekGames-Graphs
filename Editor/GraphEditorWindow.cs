@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEngine;
@@ -35,6 +36,11 @@ namespace CupkekGames.Graphs.Editor
         // and is HideAndDontSave. Survives domain reload via Find on
         // _currentAsset (cloned fresh after reload). Destroyed on close.
         GraphAssetSO _workingAsset;
+
+        // The descend path: [root, …, current]. The top is the bound asset and
+        // _currentAsset mirrors it. Transient — rebuilt from _currentAsset on
+        // domain reload (deeper descend history is not restored).
+        readonly List<GraphAssetSO> _navStack = new List<GraphAssetSO>();
 
         GraphCanvas _canvas;
         GraphToolbar _toolbar;
@@ -137,7 +143,13 @@ namespace CupkekGames.Graphs.Editor
             // when scripts recompile. Any unsaved working-copy edits from
             // before the reload are lost (working copy was transient).
             if (_currentAsset != null)
+            {
+                // Domain reload drops the transient nav stack; rebuild it as a
+                // single level from the surviving on-disk asset.
+                _navStack.Clear();
+                _navStack.Add(_currentAsset);
                 BindWorkingCopy();
+            }
 
             UpdateTitle();
         }
@@ -152,49 +164,92 @@ namespace CupkekGames.Graphs.Editor
 
         public void SetAsset(GraphAssetSO asset)
         {
-            // Prompt before discarding unsaved work when switching to a
-            // different asset (or unbinding entirely).
-            if (asset != _currentAsset && hasUnsavedChanges && _workingAsset != null)
-            {
-                int choice = EditorUtility.DisplayDialogComplex(
-                    "Unsaved changes",
-                    $"'{_currentAsset.name}' has unsaved changes. Save before switching?",
-                    "Save", "Cancel", "Discard");
-                switch (choice)
-                {
-                    case 0: SaveChanges(); break;          // Save → continue
-                    case 1: return;                        // Cancel → bail
-                    case 2: /* Discard → fall through */ break;
-                }
-            }
+            // Binding a (different) asset resets the whole descend stack.
+            if (asset != _currentAsset && !ConfirmLeaveCurrentLevel()) return;
 
-            Type desired = ResolveCanvasType(asset);
+            _navStack.Clear();
+            if (asset != null) _navStack.Add(asset);
+            RebindTop();
+        }
+
+        /// <summary>
+        /// Descend into a referenced sub-graph — pushes <paramref name="child"/> onto
+        /// the nav stack and binds it. Wired to <see cref="GraphCanvas.DescendRequested"/>.
+        /// </summary>
+        public void Descend(GraphAssetSO child)
+        {
+            if (child == null || child == _currentAsset) return;
+            if (!ConfirmLeaveCurrentLevel()) return;
+            _navStack.Add(child);
+            RebindTop();
+        }
+
+        /// <summary>Pop back to the parent graph. No-op at the root.</summary>
+        public void Ascend()
+        {
+            if (_navStack.Count <= 1) return;
+            if (!ConfirmLeaveCurrentLevel()) return;
+            _navStack.RemoveAt(_navStack.Count - 1);
+            RebindTop();
+        }
+
+        /// <summary>True when there is a parent graph to go back to (depth &gt; 1).</summary>
+        public bool CanAscend => _navStack.Count > 1;
+
+        /// <summary>
+        /// Bind the canvas / working copy to the current top-of-stack asset. Factors
+        /// the shared body of <see cref="SetAsset"/> / <see cref="Descend"/> /
+        /// <see cref="Ascend"/>.
+        /// </summary>
+        void RebindTop()
+        {
+            GraphAssetSO top = _navStack.Count > 0 ? _navStack[_navStack.Count - 1] : null;
+
+            Type desired = ResolveCanvasType(top);
             if (_canvas == null || _canvas.GetType() != desired)
             {
-                // Canvas type changed (or first build) — rebuild the whole
-                // layout so toolbar / property panel / footer / status bar
-                // all wire up to the new canvas instance.
+                // Canvas type changed (or first build) — rebuild the whole layout so
+                // toolbar / property panel / footer / status bar wire up to the new canvas.
                 BuildLayout(desired);
             }
 
             DestroyWorkingCopy();
-            _currentAsset = asset;
+            _currentAsset = top;
             BindWorkingCopy();
             _toolbar?.Refresh();
             _statusBar?.Refresh();
             UpdateTitle();
 
-            // Track in the MRU list so the toolbar dropdown surfaces the
-            // graphs the user actually works with. Persists across
-            // editor restarts via EditorPrefs.
-            if (asset != null)
+            // Track in the MRU list so the toolbar dropdown surfaces the graphs the
+            // user actually works with. Persists across editor restarts via EditorPrefs.
+            if (top != null)
             {
-                string path = AssetDatabase.GetAssetPath(asset);
+                string path = AssetDatabase.GetAssetPath(top);
                 if (!string.IsNullOrEmpty(path)) GraphEditorMRU.Push(path);
             }
 
             SetDirty(false);
             saveChangesMessage = "Save changes to this graph?";
+        }
+
+        /// <summary>
+        /// Prompt to save / discard unsaved work before leaving the current level
+        /// (switch, descend, or ascend). Returns false only if the user cancels.
+        /// </summary>
+        bool ConfirmLeaveCurrentLevel()
+        {
+            if (!hasUnsavedChanges || _workingAsset == null) return true;
+
+            int choice = EditorUtility.DisplayDialogComplex(
+                "Unsaved changes",
+                $"'{_currentAsset.name}' has unsaved changes. Save before leaving?",
+                "Save", "Cancel", "Discard");
+            switch (choice)
+            {
+                case 0: SaveChanges(); return true;   // Save
+                case 1: return false;                 // Cancel
+                default: return true;                 // Discard
+            }
         }
 
         /// <summary>
@@ -315,6 +370,10 @@ namespace CupkekGames.Graphs.Editor
             // Mark dirty on any graph mutation so Unity shows the "*"
             // in the window title and prompts for a save on close.
             _canvas.GraphChanged += () => SetDirty(true);
+
+            // Descend into a sub-graph when the canvas requests it (double-click on
+            // an ISubGraphNode). The window owns the nav stack; the canvas only signals.
+            _canvas.DescendRequested += Descend;
         }
 
         /// <summary>

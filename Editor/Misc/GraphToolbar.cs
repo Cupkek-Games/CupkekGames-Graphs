@@ -18,6 +18,7 @@ namespace CupkekGames.Graphs.Editor
         readonly Label _assetNameLabel;
         Button _saveButton;
         Button _discardButton;
+        Button _backButton;
 
         public GraphToolbar(GraphEditorWindow window)
         {
@@ -32,6 +33,12 @@ namespace CupkekGames.Graphs.Editor
             style.paddingLeft = 8f;
             style.paddingRight = 8f;
             style.alignItems = Align.Center;
+
+            // Back button — descends out of a sub-graph. Enabled only when the
+            // window's nav stack has a parent to return to (see Refresh).
+            _backButton = MakeButton("←", () => _window.Ascend());
+            _backButton.tooltip = "Back to the parent graph";
+            Add(_backButton);
 
             _assetNameLabel = new Label
             {
@@ -191,6 +198,7 @@ namespace CupkekGames.Graphs.Editor
         {
             var asset = _window.CurrentAsset;
             _assetNameLabel.text = asset != null ? asset.name : "(no graph)";
+            if (_backButton != null) _backButton.SetEnabled(_window.CanAscend);
             RefreshDirtyButtons();
         }
 
