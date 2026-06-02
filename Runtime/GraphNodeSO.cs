@@ -14,7 +14,14 @@ namespace CupkekGames.Graphs
     public abstract class GraphNodeSO : ScriptableObject
     {
         [HideInInspector] public SerializedGuid Guid = new SerializedGuid(System.Guid.NewGuid());
-        [HideInInspector] public Vector2 Position;
+
+        // Canvas position is NOT serialized into the graph asset — it lives in the
+        // GraphLayout sidecar (Foo.layout.asset), keyed by Guid, so layout churn doesn't
+        // collide with structural edits in source control. In-memory only; the editor
+        // loads it from the sidecar on bind and writes it back on save. (Trade-off:
+        // node-move Undo is not captured, and pre-sidecar graphs reset to 0 — re-run
+        // Auto Layout once to seed a sidecar.)
+        [System.NonSerialized] public Vector2 Position;
 
         /// <summary>Title rendered in the node header. Defaults to the type name.</summary>
         public virtual string DisplayTitle => GetType().Name;

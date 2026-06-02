@@ -267,6 +267,9 @@ namespace CupkekGames.Graphs.Editor
             }
 
             _workingAsset = _currentAsset.CloneForEditing();
+            // Positions live in the sidecar, not the asset — load them onto the freshly
+            // cloned (position-less) nodes before the canvas lays them out.
+            ApplyLayout(_workingAsset, _currentAsset);
             _canvas.BindToAsset(_workingAsset);
         }
 
@@ -386,10 +389,67 @@ namespace CupkekGames.Graphs.Editor
             if (_currentAsset != null && _workingAsset != null)
             {
                 _workingAsset.ApplyToOriginal(_currentAsset);
+                SaveLayout(_workingAsset, _currentAsset);
                 AssetDatabase.SaveAssets();
             }
             SetDirty(false);
             base.SaveChanges();
+        }
+
+        // ---------------------------------------------------------------
+        // Sidecar layout (positions keyed by node GUID, stored next to the
+        // graph asset as Foo.layout.asset — see GraphLayout). Keeps node
+        // positions out of the graph asset so layout churn doesn't conflict
+        // with structural edits in source control.
+        // ---------------------------------------------------------------
+
+        static string LayoutPathFor(GraphAssetSO asset)
+        {
+            string path = AssetDatabase.GetAssetPath(asset);
+            return string.IsNullOrEmpty(path) ? null : System.IO.Path.ChangeExtension(path, "layout.asset");
+        }
+
+        // Copy positions from the sidecar onto the working copy's nodes (by guid).
+        // Missing entries (new nodes, or a graph with no sidecar yet) stay at (0,0)
+        // until the next save seeds them.
+        static void ApplyLayout(GraphAssetSO working, GraphAssetSO original)
+        {
+            string path = LayoutPathFor(original);
+            if (string.IsNullOrEmpty(path)) return;
+            var layout = AssetDatabase.LoadAssetAtPath<GraphLayout>(path);
+            if (layout == null) return;
+
+            foreach (var n in working.Nodes)
+            {
+                if (n != null && layout.TryGet(n.Guid.ValueStr, out var pos))
+                    n.Position = pos;
+            }
+        }
+
+        // Write the working copy's node positions to the sidecar (creating it if needed)
+        // and prune entries for deleted nodes. Flushed by the SaveAssets in SaveChanges.
+        static void SaveLayout(GraphAssetSO working, GraphAssetSO original)
+        {
+            string path = LayoutPathFor(original);
+            if (string.IsNullOrEmpty(path)) return;
+
+            var layout = AssetDatabase.LoadAssetAtPath<GraphLayout>(path);
+            if (layout == null)
+            {
+                layout = ScriptableObject.CreateInstance<GraphLayout>();
+                AssetDatabase.CreateAsset(layout, path);
+            }
+
+            var live = new HashSet<string>();
+            foreach (var n in working.Nodes)
+            {
+                if (n == null) continue;
+                string g = n.Guid.ValueStr;
+                layout.Set(g, n.Position);
+                live.Add(g);
+            }
+            layout.PruneExcept(live);
+            EditorUtility.SetDirty(layout);
         }
 
         void UpdateTitle()
