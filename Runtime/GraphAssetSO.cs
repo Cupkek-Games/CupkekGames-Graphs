@@ -131,6 +131,13 @@ namespace CupkekGames.Graphs
             // no Object references; Instantiate above already deep-copied
             // _connections + _groups by value through serialization.
 
+            // An ISubGraphNode's reference points at ANOTHER GraphAssetSO asset
+            // (not a subasset of this one), so re-Instantiating the node above
+            // copies that reference BY VALUE — the working copy shares the same
+            // on-disk sub-graph and never deep-clones it. Correct by construction:
+            // editing a sub-graph descends into the referenced asset's own working
+            // copy, it is not mutated through this clone.
+
             clone.OnClonedFromOriginal(this);
             return clone;
         }
