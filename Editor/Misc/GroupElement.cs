@@ -146,6 +146,10 @@ namespace CupkekGames.Graphs.Editor
             _titleBar.RegisterCallback<PointerUpEvent>(OnDragPointerUp);
             _titleBar.RegisterCallback<PointerCaptureOutEvent>(OnDragPointerCaptureOut);
 
+            // Idle-hover feedback — brighten the title bar unless a drag/resize is live.
+            _titleBar.RegisterCallback<PointerEnterEvent>(OnTitleBarPointerEnter);
+            _titleBar.RegisterCallback<PointerLeaveEvent>(OnTitleBarPointerLeave);
+
             // -- Resize handle (bottom-right corner) --
             _resizeHandle = new VisualElement
             {
@@ -164,6 +168,10 @@ namespace CupkekGames.Graphs.Editor
             _resizeHandle.RegisterCallback<PointerMoveEvent>(OnResizePointerMove);
             _resizeHandle.RegisterCallback<PointerUpEvent>(OnResizePointerUp);
             _resizeHandle.RegisterCallback<PointerCaptureOutEvent>(OnResizePointerCaptureOut);
+
+            // Idle-hover feedback — brighten + grow the grip unless a resize is live.
+            _resizeHandle.RegisterCallback<PointerEnterEvent>(OnResizeHandlePointerEnter);
+            _resizeHandle.RegisterCallback<PointerLeaveEvent>(OnResizeHandlePointerLeave);
             Add(_resizeHandle);
 
             ApplyBounds();
@@ -280,6 +288,18 @@ namespace CupkekGames.Graphs.Editor
             if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
         }
 
+        void OnTitleBarPointerEnter(PointerEnterEvent evt)
+        {
+            // Yield to an active drag/resize so hover doesn't fight it.
+            if (_dragging || _resizing) return;
+            _titleBar.style.backgroundColor = GraphTheme.GroupTitleBgHover;
+        }
+
+        void OnTitleBarPointerLeave(PointerLeaveEvent evt)
+        {
+            _titleBar.style.backgroundColor = TitleColor;
+        }
+
         // ---------------------------------------------------------------
         // Resize (drag bottom-right handle)
         // ---------------------------------------------------------------
@@ -334,6 +354,20 @@ namespace CupkekGames.Graphs.Editor
             _resizing = false;
             _pointerId = -1;
             if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
+        }
+
+        void OnResizeHandlePointerEnter(PointerEnterEvent evt)
+        {
+            // Don't fight an in-progress resize.
+            if (_resizing) return;
+            _resizeHandle.style.backgroundColor = GraphTheme.GroupResizeHandleHover;
+            _resizeHandle.style.scale = new Scale(Vector3.one * 1.15f);
+        }
+
+        void OnResizeHandlePointerLeave(PointerLeaveEvent evt)
+        {
+            _resizeHandle.style.backgroundColor = ResizeHandleColor;
+            _resizeHandle.style.scale = new Scale(Vector3.one);
         }
 
         // ---------------------------------------------------------------

@@ -25,6 +25,11 @@ namespace CupkekGames.Graphs.Editor
         static readonly Color BorderColor     = GraphTheme.MinimapBorder;
         static readonly Color NodeColor       = GraphTheme.SelectionAccentMid;
         static readonly Color ViewportColor   = GraphTheme.Attention;
+        // Brighter, fully-opaque ring while actively panning the viewport.
+        static readonly Color ViewportColorActive = new Color(1f, 0.92f, 0.55f, 1f);
+
+        const float ViewportLineWidth       = 1.5f;
+        const float ViewportLineWidthActive = 2f;
 
         readonly GraphCanvas _canvas;
 
@@ -66,6 +71,49 @@ namespace CupkekGames.Graphs.Editor
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
             RegisterCallback<PointerUpEvent>(OnPointerUp);
             RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureOut);
+
+            RegisterCallback<PointerEnterEvent>(OnPointerEnter);
+            RegisterCallback<PointerLeaveEvent>(OnPointerLeave);
+        }
+
+        // ---------------------------------------------------------------
+        // Idle hover — lift the border (and background) so the minimap
+        // reads as the interactive navigate widget it is. Cached resting
+        // values are restored exactly on leave (never re-read from style).
+        // ---------------------------------------------------------------
+
+        // Same border hue, alpha lifted 0.20 -> 0.40, plus a faint bg lift.
+        static readonly Color HoverBorderColor =
+            new Color(BorderColor.r, BorderColor.g, BorderColor.b, 0.40f);
+        static readonly Color HoverBackgroundColor =
+            GraphTheme.MinimapBackground + GraphTheme.HoverOverlay;
+
+        bool _hovered;
+
+        void OnPointerEnter(PointerEnterEvent evt)
+        {
+            // Yield to an active connection/reroute drag so nothing lights
+            // up mid-drag, and don't fight the active-pan styling.
+            if (_hovered || _panning || _canvas.IsConnectionDragActive) return;
+            _hovered = true;
+            ApplyBorderColor(HoverBorderColor);
+            style.backgroundColor = HoverBackgroundColor;
+        }
+
+        void OnPointerLeave(PointerLeaveEvent evt)
+        {
+            if (!_hovered) return;
+            _hovered = false;
+            ApplyBorderColor(BorderColor);
+            style.backgroundColor = BackgroundColor;
+        }
+
+        void ApplyBorderColor(Color color)
+        {
+            style.borderTopColor = color;
+            style.borderBottomColor = color;
+            style.borderLeftColor = color;
+            style.borderRightColor = color;
         }
 
         // ---------------------------------------------------------------
@@ -102,8 +150,11 @@ namespace CupkekGames.Graphs.Editor
             Vector2 viewMapTL = WorldToMinimap(viewTL, bounds.position, contentOrigin, scale);
             Vector2 viewMapSize = viewSize * scale;
 
-            painter.strokeColor = ViewportColor;
-            painter.lineWidth = 1.5f;
+            // Active-pan emphasis: thicken and brighten the viewport ring
+            // while the user is dragging the minimap, branching on the same
+            // _panning flag the pointer handlers already drive.
+            painter.strokeColor = _panning ? ViewportColorActive : ViewportColor;
+            painter.lineWidth = _panning ? ViewportLineWidthActive : ViewportLineWidth;
             PaintRect(painter, viewMapTL, viewMapSize, fill: false);
         }
 
@@ -232,6 +283,10 @@ namespace CupkekGames.Graphs.Editor
                 this.ReleasePointer(_pointerId);
             _panning = false;
             _pointerId = -1;
+            // Revert the active-pan ring emphasis (pan-start already
+            // repaints via CenterOn -> ViewChanged; pan-end has no view
+            // change, so repaint explicitly here).
+            MarkDirtyRepaint();
         }
 
         void ApplyPan(Vector2 localPos)

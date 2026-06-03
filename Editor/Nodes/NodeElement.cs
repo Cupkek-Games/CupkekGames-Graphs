@@ -19,19 +19,49 @@ namespace CupkekGames.Graphs.Editor
     {
         const float HeaderHeight = 28f;
         const float PortRowMinHeight = 28f;
-        const float CornerRadius = 4f;
+        // Corner radius 8 so the header + body read as one rounded card.
+        const float CornerRadius = 8f;
+        // 3px type-colored strip across the header top (GraphNodeSO.HeaderColor).
+        const float AccentBarHeight = 3f;
+        // 4px base spacing unit — header/body/subtitle paddings are multiples.
+        const float Pad = 4f;
+
+        // USS state classes (the shared contract — see GraphEditor.uss).
+        const string ClassNode      = "cgg-graph-node";
+        const string ClassHover     = "cgg-graph-node--hover";
+        const string ClassSelected  = "cgg-graph-node--selected";
+        const string ClassStart     = "cgg-graph-node--start";
 
         static readonly Color BackgroundColor     = GraphTheme.Surface;
-        static readonly Color BorderColor         = GraphTheme.Separator;
         static readonly Color SelectedBorderColor = GraphTheme.SelectionAccent;
-        static readonly Color StartBorderColor    = GraphTheme.StartAccent;
         static readonly Color SubtitleColor       = GraphTheme.TextSubtitle;
+
+        // Code-only "bevel" elevation stand-in derived from the soft
+        // GraphTheme.NodeBorder (which replaced the near-black Separator
+        // hairline on cards): top/left a hair lighter, bottom/right a hair
+        // darker, so the flat card reads with a little depth. Hover bumps
+        // both toward white; selection replaces them with a solid ring.
+        // TODO: a 9-slice soft-shadow sprite would upgrade this flat bevel to
+        //       a true drop shadow — deferred (no new PNG/sprite assets yet).
+        static readonly Color BevelLight      = Lighten(GraphTheme.NodeBorder, 0.06f);
+        static readonly Color BevelDark       = Lighten(GraphTheme.NodeBorder, -0.05f);
+        static readonly Color HoverBevelLight = Lighten(GraphTheme.NodeBorder, 0.15f);
+        static readonly Color HoverBevelDark  = Lighten(GraphTheme.NodeBorder, 0.07f);
+
+        // Nudge an RGB color toward white (positive) or black (negative),
+        // clamped, alpha preserved. Used only to derive the bevel shades.
+        static Color Lighten(Color c, float amount) => new Color(
+            Mathf.Clamp01(c.r + amount),
+            Mathf.Clamp01(c.g + amount),
+            Mathf.Clamp01(c.b + amount),
+            c.a);
 
         readonly GraphCanvas _canvas;
         readonly GraphNodeSO _node;
 
         // Protected so subclasses (e.g. StickyNoteElement) can hide or
         // replace the inherited chrome with their own visual layout.
+        protected readonly VisualElement _accentBar;
         protected readonly VisualElement _header;
         protected readonly Label _iconLabel;
         protected readonly Label _titleLabel;
@@ -51,6 +81,17 @@ namespace CupkekGames.Graphs.Editor
         public bool IsSelected { get; private set; }
         public bool IsStartNode { get; private set; }
 
+        // Pointer-hover state — drives the brighter border + the
+        // "cgg-graph-node--hover" class. Visual only; no behavior change.
+        bool _isHovered;
+
+        // Effective hover: selection dominates hover, and hover yields to a
+        // live connection/reroute drag (so the hover brighten can't compete
+        // with the green/red port ring while a wire is dragged toward this
+        // card). Computed (not stored) because IsSelected and the canvas drag
+        // state change independently of this element's pointer events.
+        bool HoverActive => _isHovered && !IsSelected && !(_canvas?.IsConnectionDragActive ?? false);
+
         /// <summary>
         /// Toggle the selection halo. Called by <see cref="GraphSelection"/>;
         /// don't call directly — go through the selection so other state stays
@@ -60,22 +101,33 @@ namespace CupkekGames.Graphs.Editor
         {
             if (IsSelected == selected) return;
             IsSelected = selected;
+            EnableInClassList(ClassSelected, selected);
             UpdateBorder();
+            // Selection dominates hover — drop the hover class instantly so a
+            // selected node doesn't keep the hover brighten under its ring.
+            EnableInClassList(ClassHover, HoverActive);
         }
 
         /// <summary>
-        /// Mark this node as the graph's start node — paints a coloured
-        /// outline AND swaps the header strip to <see cref="GraphTheme.StartAccent"/>
-        /// (green pill look) so the start is unmistakable. Called by
-        /// <see cref="GraphCanvas"/> after the element is added, based
-        /// on <see cref="GraphAssetSO.StartNodeGuid"/>.
+        /// Mark this node as the graph's start node. The start cue rides on
+        /// the header accent bar (green) + the green header pill + ★ title,
+        /// NOT on the card border ring — so a node can be the start AND be
+        /// selected at the same time without one cue stomping the other.
+        /// (Previously selection overrode the start outline, hiding the
+        /// selection ring on the start node; the accent bar fixes that.)
+        /// Called by <see cref="GraphCanvas"/> after the element is added,
+        /// based on <see cref="GraphAssetSO.StartNodeGuid"/>.
         /// </summary>
         internal void SetIsStartNode(bool isStart)
         {
             if (IsStartNode == isStart) return;
             IsStartNode = isStart;
+            EnableInClassList(ClassStart, isStart);
             UpdateBorder();
-            RefreshDisplay();  // repaint header bg + title prefix
+            // Keep the hover class consistent with the new state (start toggle
+            // doesn't change HoverActive itself, but re-evaluate for parity).
+            EnableInClassList(ClassHover, HoverActive);
+            RefreshDisplay();  // repaint header bg + accent bar + title prefix
         }
 
         public NodeElement(GraphCanvas canvas, GraphNodeSO node)
@@ -83,7 +135,7 @@ namespace CupkekGames.Graphs.Editor
             _canvas = canvas;
             _node = node;
 
-            AddToClassList("cgg-graph-node");
+            AddToClassList(ClassNode);
             style.position = Position.Absolute;
             style.minWidth = node != null ? node.PreferredWidth : 240f;
             style.backgroundColor = BackgroundColor;
@@ -91,13 +143,46 @@ namespace CupkekGames.Graphs.Editor
 
             UpdateBorder();
 
+            // 3px type-colored accent bar across the very top of the card,
+            // fed from GraphNodeSO.HeaderColor (or StartAccent for the start
+            // node). Sits above the header strip and reads as the card's
+            // type tag. Top corners rounded to match the card radius.
+            //
+            // Hidden until RefreshDisplay() turns it on. Subclasses that own
+            // their layout and skip base.RefreshDisplay() (e.g.
+            // StickyNoteElement) therefore never show it — same opt-out path
+            // the header/subtitle/port-row already use, without this base
+            // type needing to know about the subclass.
+            _accentBar = new VisualElement();
+            _accentBar.AddToClassList("cgg-graph-node__accent-bar");
+            _accentBar.style.height = AccentBarHeight;
+            _accentBar.style.borderTopLeftRadius = CornerRadius;
+            _accentBar.style.borderTopRightRadius = CornerRadius;
+            _accentBar.style.display = DisplayStyle.None;
+            _accentBar.pickingMode = PickingMode.Ignore;
+            Add(_accentBar);
+
             _header = new VisualElement();
             _header.AddToClassList("cgg-graph-node__header");
             _header.style.flexDirection = FlexDirection.Row;
             _header.style.alignItems = Align.Center;
-            _header.style.paddingLeft = 8f;
-            _header.style.paddingRight = 8f;
-            _header.style.height = HeaderHeight;
+            _header.style.paddingLeft = 2f * Pad;   // 8px
+            _header.style.paddingRight = 2f * Pad;  // 8px
+            // ~6px vertical pad (per the 4px rhythm token) instead of a fixed
+            // header height, so the strip hugs the title; accent bar adds 3px.
+            _header.style.paddingTop = Pad + 2f;     // 6px
+            _header.style.paddingBottom = Pad + 2f;  // 6px
+            // Squared bottom corners so header + body read as one piece. Top
+            // corners are squared too — the dedicated _accentBar above owns the
+            // rounded top of the card. Zero the header's own borders inline so
+            // the .cgg-graph-node__header USS rule's 3px top-border reservation
+            // (an alternate accent-bar approach) doesn't double up with the
+            // _accentBar child; the bar child is the single accent source.
+            _header.style.borderTopLeftRadius = 0f;
+            _header.style.borderTopRightRadius = 0f;
+            _header.style.borderBottomLeftRadius = 0f;
+            _header.style.borderBottomRightRadius = 0f;
+            _header.style.borderTopWidth = 0f;
             _header.pickingMode = PickingMode.Ignore;
             Add(_header);
 
@@ -127,10 +212,10 @@ namespace CupkekGames.Graphs.Editor
             _subtitleLabel.AddToClassList("cgg-graph-node__subtitle");
             _subtitleLabel.style.color = SubtitleColor;
             _subtitleLabel.style.fontSize = 10;
-            _subtitleLabel.style.paddingLeft = 8f;
-            _subtitleLabel.style.paddingRight = 8f;
-            _subtitleLabel.style.paddingTop = 4f;
-            _subtitleLabel.style.paddingBottom = 2f;
+            _subtitleLabel.style.paddingLeft = 2f * Pad;   // 8px
+            _subtitleLabel.style.paddingRight = 2f * Pad;  // 8px
+            _subtitleLabel.style.paddingTop = Pad;         // 4px
+            _subtitleLabel.style.paddingBottom = Pad;      // 4px
             _subtitleLabel.pickingMode = PickingMode.Ignore;
             Add(_subtitleLabel);
 
@@ -146,10 +231,10 @@ namespace CupkekGames.Graphs.Editor
             // content. Skip for nodes that own their layout (sticky notes).
             _body = new VisualElement();
             _body.AddToClassList("cgg-graph-node__body");
-            _body.style.paddingLeft = 8f;
-            _body.style.paddingRight = 8f;
-            _body.style.paddingTop = 2f;
-            _body.style.paddingBottom = 6f;
+            _body.style.paddingLeft = 2f * Pad;   // 8px
+            _body.style.paddingRight = 2f * Pad;  // 8px
+            _body.style.paddingTop = Pad;         // 4px
+            _body.style.paddingBottom = 2f * Pad; // 8px
             Add(_body);
             if (_node != null && _node.ShowInlineProperties)
                 BuildBody(_body);
@@ -174,6 +259,20 @@ namespace CupkekGames.Graphs.Editor
                     evt.StopPropagation();
                 }
             });
+
+            // Hover affordance: brighten the card border + add the
+            // "cgg-graph-node--hover" class (USS adds the subtle raise/scale).
+            // Pure visual — does not touch selection/drag behavior.
+            RegisterCallback<PointerEnterEvent>(_ => SetHovered(true));
+            RegisterCallback<PointerLeaveEvent>(_ => SetHovered(false));
+        }
+
+        void SetHovered(bool hovered)
+        {
+            if (_isHovered == hovered) return;
+            _isHovered = hovered;
+            EnableInClassList(ClassHover, HoverActive);
+            UpdateBorder();
         }
 
         /// <summary>
@@ -222,13 +321,26 @@ namespace CupkekGames.Graphs.Editor
 
             // Start nodes paint as a bold green pill — header strip filled
             // with StartAccent and the title prefixed with a ★ so the
-            // entry point reads from across the canvas. Selection halo
-            // still wins over the green outline; see UpdateBorder.
+            // entry point reads from across the canvas. The start cue lives
+            // on the header + accent bar (NOT the card border), so a start
+            // node can also show the selection ring; see UpdateBorder.
             string title = _node.DisplayTitle ?? string.Empty;
             _titleLabel.text = IsStartNode ? "★ " + title : title;
             _header.style.backgroundColor = IsStartNode
                 ? GraphTheme.StartAccent
                 : _node.HeaderColor;
+
+            // 3px type-colored accent bar: node's HeaderColor normally, green
+            // StartAccent for the start node (its persistent, selection-proof
+            // cue). Shown here (constructor leaves it hidden) so subclasses
+            // that skip base.RefreshDisplay() keep it off.
+            if (_accentBar != null)
+            {
+                _accentBar.style.display = DisplayStyle.Flex;
+                _accentBar.style.backgroundColor = IsStartNode
+                    ? GraphTheme.StartAccent
+                    : _node.HeaderColor;
+            }
 
             // Optional icon glyph — hidden when the node returns null.
             string glyph = _node.IconGlyph;
@@ -294,6 +406,7 @@ namespace CupkekGames.Graphs.Editor
             foreach (var def in _node.InputPorts)
             {
                 var port = new PortElement(this, isInput: true, def, idx++);
+                port.RegisterCallback<GeometryChangedEvent>(OnPortGeometryChanged);
                 _inputPorts.Add(port);
                 Add(port);
             }
@@ -302,6 +415,7 @@ namespace CupkekGames.Graphs.Editor
             foreach (var def in _node.OutputPorts)
             {
                 var port = new PortElement(this, isInput: false, def, idx++);
+                port.RegisterCallback<GeometryChangedEvent>(OnPortGeometryChanged);
                 _outputPorts.Add(port);
                 Add(port);
             }
@@ -315,6 +429,18 @@ namespace CupkekGames.Graphs.Editor
 
             // Initial layout — geometry pass will fire LayOutPorts once layout settles.
             LayOutPorts();
+        }
+
+        // When a port's resolved layout settles — notably as a freshly-opened
+        // graph finishes laying out, after the first fallback pass — re-route
+        // the edges touching this node so they glue to the final port
+        // positions. Without this, edges built before the canvas had a resolved
+        // layout keep stale endpoints: the drawn curve looks fine (OnPaint
+        // reads anchors live) but the cached hit-test band is offset, so old
+        // lines can't be clicked/grabbed while freshly created ones can.
+        void OnPortGeometryChanged(GeometryChangedEvent _)
+        {
+            _canvas?.RefreshEdgesForNode(_node);
         }
 
         void LayOutPorts()
@@ -394,25 +520,43 @@ namespace CupkekGames.Graphs.Editor
 
         void UpdateBorder()
         {
-            // Selection takes priority over the start-node outline so the
-            // user always knows what's currently selected.
-            Color color = IsSelected
-                ? SelectedBorderColor
-                : (IsStartNode ? StartBorderColor : BorderColor);
-            float width = IsSelected || IsStartNode ? 2f : 1f;
-
             style.borderTopLeftRadius = CornerRadius;
             style.borderTopRightRadius = CornerRadius;
             style.borderBottomLeftRadius = CornerRadius;
             style.borderBottomRightRadius = CornerRadius;
+
+            if (IsSelected)
+            {
+                // Selection: a 2px SelectionAccent ring on all four edges.
+                // The start node keeps its cue on the accent bar/header, so
+                // selection + start now coexist (was: start outline lost when
+                // a start node got selected).
+                SetBorder(2f, SelectedBorderColor, SelectedBorderColor,
+                          SelectedBorderColor, SelectedBorderColor);
+                return;
+            }
+
+            // Default / hover: a soft 1px NodeBorder with a code-only bevel
+            // (top/left a hair lighter, bottom/right a hair darker) as the
+            // elevation stand-in. Hover brightens the bevel.
+            // TODO: a 9-slice soft-shadow sprite would replace this flat bevel
+            //       with a true drop shadow — deferred (no new sprite assets).
+            Color light = HoverActive ? HoverBevelLight : BevelLight;
+            Color dark  = HoverActive ? HoverBevelDark  : BevelDark;
+            SetBorder(1f, light, dark, light, dark);
+        }
+
+        // top, bottom, left, right — keeps UpdateBorder readable.
+        void SetBorder(float width, Color top, Color bottom, Color left, Color right)
+        {
             style.borderTopWidth = width;
             style.borderBottomWidth = width;
             style.borderLeftWidth = width;
             style.borderRightWidth = width;
-            style.borderTopColor = color;
-            style.borderBottomColor = color;
-            style.borderLeftColor = color;
-            style.borderRightColor = color;
+            style.borderTopColor = top;
+            style.borderBottomColor = bottom;
+            style.borderLeftColor = left;
+            style.borderRightColor = right;
         }
     }
 }

@@ -15,19 +15,42 @@ namespace CupkekGames.Graphs.Editor
         const float BoundsPadding = 40f;
         const float StrokeWidth = 2f;
         const float SelectedStrokeWidth = 3f;
+        const float HoverStrokeWidth = 3f;
         const int HitTestSamples = 24;
         const float HitTestTolerance = 6f;
 
         static readonly Color EdgeColor     = GraphTheme.EdgeDefault;
         static readonly Color SelectedColor = GraphTheme.EdgeSelected;
+        // Hover tint — EdgeDefault lifted toward white + fully opaque so the
+        // curve under the cursor reads as "live" without the selection blue.
+        // (Edges paint via Painter2D, not USS, so the hover state lives here
+        //  rather than in a .uss :hover rule.)
+        static readonly Color HoverColor    = GraphTheme.EdgeHover;
 
         public GraphConnection Connection { get; }
         public bool IsSelected { get; private set; }
+        bool _isHover;
 
         NodeElement _sourceNode;
         NodeElement _targetNode;
         Vector2 _localOffset;
         readonly Label _labelChip;
+
+        /// <summary>Canvas this edge belongs to (resolved via its endpoints).</summary>
+        public GraphCanvas Canvas => _sourceNode?.Canvas ?? _targetNode?.Canvas;
+
+        // --- Wire-drag reroute: grab the curve and pull one end off. Which end
+        // detaches depends on which half was grabbed (see OnPointerDown /
+        // IsNearerTargetEnd). A plain click still just selects — the reroute
+        // only begins once the pointer moves past RerouteThreshold. ---
+        const float RerouteThreshold = 4f;
+        bool _dragArmed;
+        bool _dragging;
+        int _dragPointerId = -1;
+        Vector2 _downPanel;
+        bool _grabbedInputHalf;
+        PortElement _anchorPort;
+        EdgePreview _dragPreview;
 
         public NodeElement SourceNode
         {
@@ -87,6 +110,34 @@ namespace CupkekGames.Graphs.Editor
 
             generateVisualContent += OnPaint;
             RegisterCallback<PointerDownEvent>(OnPointerDown);
+            RegisterCallback<PointerMoveEvent>(OnPointerMove);
+            RegisterCallback<PointerUpEvent>(OnPointerUp);
+            RegisterCallback<PointerCaptureOutEvent>(OnPointerCaptureOut);
+            RegisterCallback<PointerEnterEvent>(OnPointerEnter);
+            RegisterCallback<PointerLeaveEvent>(OnPointerLeave);
+        }
+
+        // ---------------------------------------------------------------
+        // Hover — thicken (2 -> 3px) + lighten while the cursor is over the
+        // curve. PickingMode.Position + the ContainsPoint hit-test keep
+        // these events scoped to the actual curve, not the padded bounds.
+        // ---------------------------------------------------------------
+
+        void OnPointerEnter(PointerEnterEvent _)
+        {
+            // Hover yields to a live connection/reroute drag — nothing under the
+            // cursor should light up mid-drag.
+            if (Canvas?.IsConnectionDragActive == true) return;
+            if (_isHover) return;
+            _isHover = true;
+            MarkDirtyRepaint();
+        }
+
+        void OnPointerLeave(PointerLeaveEvent _)
+        {
+            if (!_isHover) return;
+            _isHover = false;
+            MarkDirtyRepaint();
         }
 
         // ---------------------------------------------------------------
@@ -105,7 +156,7 @@ namespace CupkekGames.Graphs.Editor
             if (evt.button != (int)MouseButton.LeftMouse) return;
             if (evt.altKey) return; // alt+click is canvas pan
 
-            var canvas = _sourceNode?.Canvas ?? _targetNode?.Canvas;
+            var canvas = Canvas;
             if (canvas == null) return;
 
             if (evt.shiftKey) canvas.Selection.Add(this);
@@ -113,7 +164,152 @@ namespace CupkekGames.Graphs.Editor
             else canvas.Selection.SetTo(this);
 
             canvas.Focus();
+
+            // Arm a wire-drag reroute on a plain click (no multi-select
+            // modifiers). The connection is only detached once the pointer
+            // moves past the threshold (OnPointerMove), so a simple click
+            // still just selects. Capture now so we receive the move/up.
+            if (!evt.shiftKey && !evt.ctrlKey && !evt.commandKey)
+            {
+                _dragArmed = true;
+                _dragging = false;
+                _dragPointerId = evt.pointerId;
+                _downPanel = evt.position;
+                _grabbedInputHalf = IsNearerTargetEnd(evt.localPosition);
+                this.CapturePointer(evt.pointerId);
+            }
+
             evt.StopPropagation();
+        }
+
+        // ---------------------------------------------------------------
+        // Wire-drag reroute
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// True if <paramref name="localPoint"/> (edge-local coords) is closer
+        /// to the target/input end of the curve than the source/output end —
+        /// i.e. the user grabbed the input half. Uses the same start/end the
+        /// hit-test does.
+        /// </summary>
+        bool IsNearerTargetEnd(Vector2 localPoint)
+        {
+            if (_sourceNode == null || _targetNode == null) return false;
+            Vector2 startLocal = _sourceNode.GetOutputAnchor() + _localOffset;
+            Vector2 endLocal = _targetNode.GetInputAnchor() + _localOffset;
+            return (localPoint - endLocal).sqrMagnitude < (localPoint - startLocal).sqrMagnitude;
+        }
+
+        void OnPointerMove(PointerMoveEvent evt)
+        {
+            if (!_dragArmed || evt.pointerId != _dragPointerId) return;
+
+            if (!_dragging)
+            {
+                if (Vector2.Distance(evt.position, _downPanel) < RerouteThreshold) return;
+                if (!BeginReroute()) { EndReroute(disposeSelf: false); return; }
+            }
+
+            UpdateReroutePreview(evt.position);
+            evt.StopPropagation();
+        }
+
+        void OnPointerUp(PointerUpEvent evt)
+        {
+            if (!_dragArmed || evt.pointerId != _dragPointerId) return;
+
+            if (_dragging)
+            {
+                // Drop: reconnect on a compatible port, or remove if released
+                // in empty space. Either way this detached edge is disposed.
+                Canvas?.CompleteConnectionPreview(_anchorPort, evt.position);
+                EndReroute(disposeSelf: true);
+                evt.StopPropagation();
+            }
+            else
+            {
+                // Never crossed the threshold — was just a click; keep the
+                // connection and release the capture.
+                EndReroute(disposeSelf: false);
+            }
+        }
+
+        void OnPointerCaptureOut(PointerCaptureOutEvent evt)
+        {
+            if (!_dragArmed || evt.pointerId != _dragPointerId) return;
+
+            if (_dragging)
+            {
+                // Capture yanked mid-reroute: drop the preview. The connection
+                // is already detached, so this dangling edge is disposed.
+                Canvas?.CancelConnectionPreview();
+                Canvas?.ClearDropCandidate();
+                EndReroute(disposeSelf: true);
+            }
+            else
+            {
+                EndReroute(disposeSelf: false);
+            }
+        }
+
+        /// <summary>
+        /// Detach the connection and start the live preview from the kept end.
+        /// Returns false (leaving the connection intact) when the anchor port
+        /// isn't resolvable.
+        /// </summary>
+        bool BeginReroute()
+        {
+            var canvas = Canvas;
+            if (canvas == null) return false;
+
+            _anchorPort = canvas.DetachConnectionForReroute(Connection, _grabbedInputHalf);
+            if (_anchorPort == null) return false;
+
+            _dragging = true;
+            // Hide the now-detached curve (kept in the hierarchy only to retain
+            // the pointer capture); the EdgePreview stands in for it.
+            style.opacity = 0f;
+            _isHover = false; // drop any stale hover so it can't linger on the grabbed wire
+            _dragPreview = canvas.BeginConnectionPreview(_anchorPort);
+            return true;
+        }
+
+        void UpdateReroutePreview(Vector2 panelPos)
+        {
+            var canvas = Canvas;
+            if (canvas == null || _dragPreview == null) return;
+
+            Vector2 worldPos = canvas.PanelToCanvasWorld(panelPos);
+            worldPos = canvas.UpdateDropCandidate(_anchorPort, panelPos, worldPos);
+            _dragPreview.SetEndWorld(worldPos);
+        }
+
+        void EndReroute(bool disposeSelf)
+        {
+            // Reset state BEFORE releasing capture so the synchronous
+            // PointerCaptureOut that release fires early-returns.
+            _dragArmed = false;
+            _dragging = false;
+
+            // Drop any lingering drop-target affordance (green/red ring) on the
+            // last hovered port — no-op if none is lit.
+            Canvas?.ClearDropCandidate();
+
+            if (this.HasPointerCapture(_dragPointerId))
+                this.ReleasePointer(_dragPointerId);
+            _dragPointerId = -1;
+            _anchorPort = null;
+            _dragPreview = null;
+
+            if (disposeSelf)
+            {
+                Canvas?.Selection.Remove(this);
+                RemoveFromHierarchy();
+            }
+            else
+            {
+                style.opacity = 1f; // restore (click path / safety)
+            }
         }
 
         // ---------------------------------------------------------------
@@ -125,6 +321,10 @@ namespace CupkekGames.Graphs.Editor
         {
             if (_sourceNode == null || _targetNode == null) return false;
 
+            // Scale the grab band by inverse zoom so it keeps a stable SCREEN
+            // size at low zoom (the band lives in canvas-world space).
+            float tol = HitTestTolerance / Mathf.Max(Canvas?.ViewZoom ?? 1f, 0.01f);
+
             Vector2 start = _sourceNode.GetOutputAnchor() + _localOffset;
             Vector2 end = _targetNode.GetInputAnchor() + _localOffset;
             ComputeControlPoints(start, end, out var c1, out var c2);
@@ -134,7 +334,7 @@ namespace CupkekGames.Graphs.Editor
             {
                 float t = (float)i / HitTestSamples;
                 Vector2 cur = SampleBezier(start, c1, c2, end, t);
-                if (DistanceToSegment(localPoint, prev, cur) <= HitTestTolerance)
+                if (DistanceToSegment(localPoint, prev, cur) <= tol)
                     return true;
                 prev = cur;
             }
@@ -214,14 +414,41 @@ namespace CupkekGames.Graphs.Editor
             Vector2 end = _targetNode.GetInputAnchor() + _localOffset;
             ComputeControlPoints(start, end, out var c1, out var c2);
 
+            // Hover yields to a live connection/reroute drag so the grabbed
+            // wire doesn't paint a stale hover state.
+            bool hover = _isHover && !(Canvas?.IsConnectionDragActive == true);
+
+            // Selection wins over hover; hover wins over the resting look.
+            Color color;
+            float width;
+            if (IsSelected)      { color = SelectedColor; width = SelectedStrokeWidth; }
+            else if (hover)      { color = HoverColor;    width = HoverStrokeWidth; }
+            else                 { color = EdgeColor;     width = StrokeWidth; }
+
             var painter = ctx.painter2D;
-            painter.strokeColor = IsSelected ? SelectedColor : EdgeColor;
-            painter.lineWidth = IsSelected ? SelectedStrokeWidth : StrokeWidth;
+            painter.strokeColor = color;
+            painter.lineWidth = width;
             painter.lineCap = LineCap.Round;
             painter.BeginPath();
             painter.MoveTo(start);
             painter.BezierCurveTo(c1, c2, end);
             painter.Stroke();
+
+            // Endpoint grab handles — small filled dots at both ends make the
+            // reroute model legible on hover. Never during a drag (hover is
+            // already false then) and not while selected (selection reads as a
+            // distinct state).
+            if (hover && !IsSelected)
+            {
+                var p = ctx.painter2D;
+                p.fillColor = GraphTheme.EdgeEndpointHandle;
+                p.BeginPath();
+                p.Arc(start, 3.5f, 0f, 360f);
+                p.Fill();
+                p.BeginPath();
+                p.Arc(end, 3.5f, 0f, 360f);
+                p.Fill();
+            }
         }
 
         static void ComputeControlPoints(Vector2 start, Vector2 end, out Vector2 c1, out Vector2 c2)

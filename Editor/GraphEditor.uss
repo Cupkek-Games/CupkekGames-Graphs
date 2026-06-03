@@ -1,0 +1,185 @@
+/* =====================================================================
+   GraphEditor.uss — shared visual foundation for the graphs editor.
+
+   Class names + state modifiers here are the contract every Phase 2
+   stream toggles in C#. Colors are kept conceptually in sync with
+   GraphTheme.cs (USS can't read C# statics, so the same RGB values are
+   hardcoded below and annotated with their GraphTheme counterpart —
+   change both together).
+
+   NOTE: several node/port visuals are still painted via inline
+   `style.*` in NodeElement.cs / PortElement.cs, which beats USS
+   specificity. Those inline writers win for the base look; the rules
+   here own the *state transitions* (hover / selected / start / drop
+   affordances) and the animation timings, which is what later streams
+   add/remove classes to drive. As inline styles migrate into USS, the
+   base rules below become the single source of truth.
+
+   ASSET CONSTRAINT: elevation is code-only — soft border + bevel +
+   hover/selection raise. No box-shadow (unsupported in USS) and no
+   shadow sprite.
+   // TODO: a 9-slice soft-shadow sprite (border-image / background
+   //       image with slicing) would upgrade flat elevation to a true
+   //       drop shadow — deferred (no new PNG/sprite assets allowed yet).
+   ===================================================================== */
+
+/* ── 4px spacing scale ──────────────────────────────────────────────
+   base unit = 4px. Header ~6px vertical pad; body paddings are
+   4-multiples. (Kept as reference; inline styles currently set the
+   concrete values.) */
+
+/* ─────────────────────────────────────────────────────────────────
+   NODE CARD — "cgg-graph-node"
+   corner radius 8 (one rounded piece); soft NodeBorder default;
+   subtle bevel for depth; hover raises + brightens border; selection
+   draws a 2px SelectionAccent ring.
+   ───────────────────────────────────────────────────────────────── */
+.cgg-graph-node {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+
+    /* GraphTheme.Surface rgb(0.22,0.23,0.26) */
+    background-color: rgb(56, 59, 66);
+
+    /* Default soft border = GraphTheme.NodeBorder rgb(0.34,0.35,0.40).
+       Bevel stand-in: top/left a hair lighter, bottom/right a hair
+       darker, so the flat card reads with a little depth. */
+    border-top-width: 1px;
+    border-left-width: 1px;
+    border-bottom-width: 1px;
+    border-right-width: 1px;
+    border-top-color: rgb(96, 99, 107);    /* NodeBorder +bevel light */
+    border-left-color: rgb(96, 99, 107);   /* NodeBorder +bevel light */
+    border-bottom-color: rgb(74, 76, 84);  /* NodeBorder -bevel dark  */
+    border-right-color: rgb(74, 76, 84);   /* NodeBorder -bevel dark  */
+
+    /* scale + border-color + opacity transitions ~90ms ease */
+    transition-property: scale, border-color, border-top-color, border-bottom-color, border-left-color, border-right-color, opacity;
+    transition-duration: 90ms;
+    transition-timing-function: ease;
+}
+
+/* Hover: brighten the border only. NO root scale — the card holds the
+   absolutely-positioned ports, but edges anchor to the UNSCALED layout
+   (NodeElement.GetPortAnchorWorld), so scaling the root drifted connected
+   ports ~1-2px off their wires on every hover. The brighter NodeBorder
+   bevel (also applied inline in UpdateBorder) is the lift. */
+.cgg-graph-node--hover {
+    border-top-color: rgb(125, 128, 138);
+    border-left-color: rgb(125, 128, 138);
+    border-bottom-color: rgb(105, 108, 118);
+    border-right-color: rgb(105, 108, 118);
+}
+
+/* Selection: 2px ring in SelectionAccent rgb(0.55,0.85,1). Overrides
+   the bevel on all four edges so the ring reads as one solid color. */
+.cgg-graph-node--selected {
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-top-color: rgb(140, 217, 255);
+    border-left-color: rgb(140, 217, 255);
+    border-bottom-color: rgb(140, 217, 255);
+    border-right-color: rgb(140, 217, 255);
+}
+
+/* Start node: 2px ring in StartAccent rgb(0.45,0.85,0.50) (green).
+   Selection still wins when both are present (declare --start before
+   --selected in the toggling code, or rely on --selected's later
+   cascade position above). */
+.cgg-graph-node--start {
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-top-color: rgb(115, 217, 128);
+    border-left-color: rgb(115, 217, 128);
+    border-bottom-color: rgb(115, 217, 128);
+    border-right-color: rgb(115, 217, 128);
+}
+
+/* 3px type-colored accent bar at the header top, fed from
+   GraphNodeSO.HeaderColor. The bar's color is per-node so it stays an
+   inline style; this rule just reserves the strip + squares the
+   header's bottom corners so header + body read as one piece. */
+.cgg-graph-node__header {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-width: 3px; /* type-colored accent bar (color set inline) */
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   PORTS — "cgg-graph-port" (+ "--input" / "--output")
+   drop-target affordances toggled mid-drag:
+     --candrop     hovered COMPATIBLE input -> scale 1.4 + StartAccent
+                   ring + brighter fill
+     --incompatible hovered INCOMPATIBLE input -> ValidationError ring,
+                   no scale
+   ───────────────────────────────────────────────────────────────── */
+.cgg-graph-port {
+    /* scale + border-color + opacity ~90ms ease (matches node card) */
+    transition-property: scale, border-color, border-top-color, border-bottom-color, border-left-color, border-right-color, background-color, opacity;
+    transition-duration: 90ms;
+    transition-timing-function: ease;
+}
+
+/* Base fills come from GraphTheme.PortInput / PortOutput inline; left
+   here as hooks so per-side tweaks have a home. */
+.cgg-graph-port--input {
+}
+
+.cgg-graph-port--output {
+}
+
+/* Idle hover (no drag): cool near-white ring + subtle pop, signalling the
+   port is interactive (output = drag-source, connected input = detach
+   handle). Inline writes in PortElement.RefreshHoverVisual are the
+   guaranteed path AND differentiate the grab vs passive look; this rule
+   earns the 90ms transition and mirrors the grab variant. Ordered BEFORE
+   --candrop / --incompatible so the drag states win the cascade when both
+   classes briefly coexist. ring = PortHoverRing rgb(0.85,0.88,0.95). */
+.cgg-graph-port--hover {
+    scale: 1.18 1.18;
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-top-color: rgb(217, 224, 242);
+    border-left-color: rgb(217, 224, 242);
+    border-bottom-color: rgb(217, 224, 242);
+    border-right-color: rgb(217, 224, 242);
+}
+
+/* Compatible drop target under the dragged edge: pop + green ring +
+   brighter fill. ring = StartAccent rgb(0.45,0.85,0.50). */
+.cgg-graph-port--candrop {
+    scale: 1.4 1.4;
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-top-color: rgb(115, 217, 128);
+    border-left-color: rgb(115, 217, 128);
+    border-bottom-color: rgb(115, 217, 128);
+    border-right-color: rgb(115, 217, 128);
+    /* brighter fill — PortInput rgb(0.55,0.70,0.95) lifted toward white */
+    background-color: rgb(176, 198, 247);
+}
+
+/* Incompatible drop target: red ring, NO scale. ring =
+   ValidationError rgb(1,0.42,0.42). */
+.cgg-graph-port--incompatible {
+    border-top-width: 2px;
+    border-left-width: 2px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-top-color: rgb(255, 107, 107);
+    border-left-color: rgb(255, 107, 107);
+    border-bottom-color: rgb(255, 107, 107);
+    border-right-color: rgb(255, 107, 107);
+}

@@ -4,10 +4,13 @@ using UnityEngine.UIElements;
 namespace CupkekGames.Graphs.Editor
 {
     /// <summary>
-    /// Ghost edge painted while the user is drag-connecting from an output
-    /// port. Lives in the canvas's edge layer; tracks the cursor position
-    /// (in canvas world coords) until <see cref="PortDragManipulator"/>
-    /// either commits to a real <see cref="GraphConnection"/> or cancels.
+    /// Ghost edge painted while the user is drag-connecting or
+    /// drag-rerouting. One end is anchored to a fixed port; the other tracks
+    /// the cursor (in canvas world coords). The anchor may be an OUTPUT port
+    /// (a normal new-connection / target-reroute drag — loose end seeks an
+    /// input) or an INPUT port (a source-reroute drag — loose end seeks an
+    /// output). Lives in the canvas's edge layer until the drag either
+    /// commits to a real <see cref="GraphConnection"/> or cancels.
     /// </summary>
     public class EdgePreview : VisualElement
     {
@@ -16,15 +19,15 @@ namespace CupkekGames.Graphs.Editor
 
         static readonly Color PreviewColor = GraphTheme.Attention;
 
-        readonly PortElement _sourcePort;
+        readonly PortElement _anchorPort;
         Vector2 _endWorld;
         Vector2 _localOffset;
 
-        public PortElement SourcePort => _sourcePort;
+        public PortElement AnchorPort => _anchorPort;
 
-        public EdgePreview(PortElement sourcePort)
+        public EdgePreview(PortElement anchorPort)
         {
-            _sourcePort = sourcePort;
+            _anchorPort = anchorPort;
             AddToClassList("cgg-graph-edge-preview");
             style.position = Position.Absolute;
             pickingMode = PickingMode.Ignore;
@@ -38,13 +41,24 @@ namespace CupkekGames.Graphs.Editor
             Refresh();
         }
 
+        /// <summary>
+        /// World-space anchor point: the input edge of the node for an input
+        /// anchor, the output edge for an output anchor.
+        /// </summary>
+        Vector2 AnchorWorld()
+        {
+            return _anchorPort.IsInput
+                ? _anchorPort.OwnerNode.GetInputAnchor()
+                : _anchorPort.OwnerNode.GetOutputAnchor();
+        }
+
         void Refresh()
         {
-            Vector2 start = _sourcePort.OwnerNode.GetOutputAnchor();
+            Vector2 anchor = AnchorWorld();
             Vector2 end = _endWorld;
 
-            Vector2 min = Vector2.Min(start, end) - Vector2.one * BoundsPadding;
-            Vector2 max = Vector2.Max(start, end) + Vector2.one * BoundsPadding;
+            Vector2 min = Vector2.Min(anchor, end) - Vector2.one * BoundsPadding;
+            Vector2 max = Vector2.Max(anchor, end) + Vector2.one * BoundsPadding;
 
             style.left = min.x;
             style.top = min.y;
@@ -57,8 +71,14 @@ namespace CupkekGames.Graphs.Editor
 
         void OnPaint(MeshGenerationContext ctx)
         {
-            Vector2 start = _sourcePort.OwnerNode.GetOutputAnchor() + _localOffset;
-            Vector2 end = _endWorld + _localOffset;
+            Vector2 anchor = AnchorWorld() + _localOffset;
+            Vector2 loose = _endWorld + _localOffset;
+
+            // Always paint output-side -> input-side so the curve bows the
+            // natural way regardless of which end is anchored: for an input
+            // anchor the loose (cursor) end plays the output role.
+            Vector2 start = _anchorPort.IsInput ? loose : anchor; // output-ish (left)
+            Vector2 end = _anchorPort.IsInput ? anchor : loose;   // input-ish (right)
 
             float dx = Mathf.Abs(end.x - start.x);
             float tension = Mathf.Max(dx * 0.5f, 30f);

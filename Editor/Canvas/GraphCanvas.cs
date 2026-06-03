@@ -121,9 +121,23 @@ namespace CupkekGames.Graphs.Editor
             set { _viewZoom = Mathf.Clamp(value, MinZoom, MaxZoom); ApplyTransform(); }
         }
 
+        /// <summary>Package-absolute path to the shared editor stylesheet.</summary>
+        const string StyleSheetPath = "Packages/com.cupkekgames.graphs/Editor/GraphEditor.uss";
+
         public GraphCanvas()
         {
             AddToClassList("cgg-graph-canvas");
+
+            // Attach the shared visual foundation. Class names + state
+            // modifiers in GraphEditor.uss (cgg-graph-node, --selected /
+            // --hover / --start, cgg-graph-port, --candrop / --incompatible)
+            // are toggled in C# by later interaction streams. Loaded by its
+            // package-absolute path so it resolves regardless of how the
+            // package is consumed (registry / file: override).
+            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(StyleSheetPath);
+            if (sheet != null)
+                styleSheets.Add(sheet);
+
             style.overflow = Overflow.Hidden;
             style.flexGrow = 1;
             focusable = true;
@@ -502,9 +516,10 @@ namespace CupkekGames.Graphs.Editor
 
         // Element rebuild / add / find ops live in GraphCanvas.Elements.cs.
 
-        // Drag-to-connect ops (BeginPreview / CompletePreview / CancelPreview
-        // / CanConnect / CreateConnection / FindInputPortAtPanelPosition)
-        // live in GraphCanvas.DragConnect.cs.
+        // Drag-to-connect + drag-to-detach/reroute ops (BeginPreview /
+        // CompletePreview / CancelPreview / CanConnect / CreateConnection /
+        // DetachConnectionAt / DetachConnectionForReroute) live in
+        // GraphCanvas.DragConnect.cs.
 
         // ---------------------------------------------------------------
         // Selection helpers

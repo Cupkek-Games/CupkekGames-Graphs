@@ -11,7 +11,11 @@ namespace CupkekGames.Graphs.Editor
     /// </summary>
     public class GraphStatusBar : VisualElement
     {
-        static readonly Color BackgroundColor = GraphTheme.CanvasBackdrop;
+        // SurfaceElevated (not CanvasBackdrop) so the bar reads as chrome
+        // sitting above the canvas. With the retuned palette SurfaceElevated
+        // is genuinely lighter than the backdrop, so the bar is no longer
+        // invisible against it (and now matches the toolbar's plane).
+        static readonly Color BackgroundColor = GraphTheme.SurfaceElevated;
         static readonly Color SeparatorColor  = GraphTheme.Separator;
         static readonly Color TextColor       = GraphTheme.TextSecondary;
 

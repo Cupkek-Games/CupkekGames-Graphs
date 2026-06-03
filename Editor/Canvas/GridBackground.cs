@@ -19,6 +19,11 @@ namespace CupkekGames.Graphs.Editor
         /// <summary>Hide grid below this on-screen spacing (overcrowded otherwise).</summary>
         const float HideBelowScreenSpacing = 4f;
 
+        // Line colors are the retuned opaque GridLineMinor/Major tokens
+        // (was white-with-alpha, which washed out the dark backdrop). Pulled
+        // straight from GraphTheme so a palette tweak reflows the grid with
+        // no change here. Grid stays line-based — it renders via Painter2D,
+        // but procedural dots were skipped to keep this low-risk.
         static readonly Color BackgroundColor = GraphTheme.CanvasBackdrop;
         static readonly Color MinorLineColor  = GraphTheme.GridLineMinor;
         static readonly Color MajorLineColor  = GraphTheme.GridLineMajor;
