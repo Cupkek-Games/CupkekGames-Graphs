@@ -88,6 +88,15 @@ namespace CupkekGames.Graphs
         /// <summary>Editor-only — raise <see cref="EditorAssetMutated"/> for this asset.</summary>
         public void EditorRaiseMutated() => EditorAssetMutated?.Invoke(this);
 
+        /// <summary>
+        /// Optionally supply a source of per-node live runtime state for the editor's
+        /// play-mode overlay (default null = no overlay). Domain graphs whose runtime
+        /// has inspectable per-node state — nav (which destinations are on a stack),
+        /// behaviour-trees (the running node) — return a source; the canvas subscribes
+        /// to it in play mode and paints each node's glow / pill. Editor-only.
+        /// </summary>
+        public virtual IGraphRuntimeStateSource CreateRuntimeStateSource() => null;
+
         // ---------------------------------------------------------------
         // Working-copy editing (Shader-Graph-style deferred save)
         //

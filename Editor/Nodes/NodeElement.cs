@@ -81,6 +81,7 @@ namespace CupkekGames.Graphs.Editor
         Color? _accentTint;                     // overrides the accent-bar color
         IReadOnlyList<NodeBadge> _extraBadges;   // appended after the node's own badges
         bool _searchHighlight;                   // toolbar-find match outline
+        GraphNodeRuntimeState? _runtimeState;    // play-mode live state (glow + pill)
 
         readonly List<PortElement> _inputPorts = new List<PortElement>();
         readonly List<PortElement> _outputPorts = new List<PortElement>();
@@ -432,6 +433,13 @@ namespace CupkekGames.Graphs.Editor
             if (_badgeRow == null) return;
             _badgeRow.Clear();
 
+            // Live runtime pill first (leftmost) — the signal you're watching in play.
+            if (_runtimeState.HasValue && _runtimeState.Value.Badge.HasValue)
+            {
+                var rb = _runtimeState.Value.Badge.Value;
+                _badgeRow.Add(MakeBadgePill(rb.Text, rb.Tint, rb.Tooltip));
+            }
+
             if (_validation.HasValue)
             {
                 bool err = _validation.Value == GraphValidationIssue.SeverityLevel.Error;
@@ -537,6 +545,19 @@ namespace CupkekGames.Graphs.Editor
             if (_searchHighlight == on) return;
             _searchHighlight = on;
             UpdateBorder();
+        }
+
+        /// <summary>
+        /// Play-mode runtime state pushed by the canvas (a glow border + a live
+        /// pill). Null clears it. In border priority it sits below selection +
+        /// validation, above search; the pill always shows (leftmost).
+        /// </summary>
+        public void SetRuntimeState(GraphNodeRuntimeState? state)
+        {
+            if (!_runtimeState.HasValue && !state.HasValue) return; // stays clear — skip
+            _runtimeState = state;
+            UpdateBorder();
+            RebuildBadges();
         }
 
         // True when a card-local point lands in the header strip (the rename
@@ -789,6 +810,14 @@ namespace CupkekGames.Graphs.Editor
                     ? GraphTheme.ValidationError
                     : GraphTheme.ValidationWarning;
                 SetBorder(2f, v, v, v, v);
+                return;
+            }
+
+            if (_runtimeState.HasValue && _runtimeState.Value.Glow.HasValue)
+            {
+                // Play-mode runtime glow (below selection + validation, above search).
+                Color rg = _runtimeState.Value.Glow.Value;
+                SetBorder(2f, rg, rg, rg, rg);
                 return;
             }
 

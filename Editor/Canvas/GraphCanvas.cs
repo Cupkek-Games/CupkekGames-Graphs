@@ -217,6 +217,8 @@ namespace CupkekGames.Graphs.Editor
             // Refresh visuals when our bound asset is the one that changed.
             GraphAssetSO.EditorAssetMutated += OnAssetMutatedExternally;
             RegisterCallback<DetachFromPanelEvent>(_ => GraphAssetSO.EditorAssetMutated -= OnAssetMutatedExternally);
+
+            HookRuntimeOverlay();
         }
 
         void OnAssetMutatedExternally(GraphAssetSO asset)
@@ -405,6 +407,10 @@ namespace CupkekGames.Graphs.Editor
             Undo.undoRedoPerformed += OnUndoRedo;
 
             RaiseGraphChanged();
+
+            // Pick up the play-mode runtime overlay for the newly-bound asset
+            // (no-op outside play mode / when the asset supplies no source).
+            SetupRuntimeSource();
         }
 
         /// <summary>
@@ -480,6 +486,8 @@ namespace CupkekGames.Graphs.Editor
         {
             if (Asset == null && _nodeElements.Count == 0 && _menuManipulator == null)
                 return;
+
+            TeardownRuntimeSource();
 
             Undo.undoRedoPerformed -= OnUndoRedo;
 
