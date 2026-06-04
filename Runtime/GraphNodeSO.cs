@@ -38,6 +38,32 @@ namespace CupkekGames.Graphs
         /// </summary>
         public virtual string IconGlyph => null;
 
+        /// <summary>
+        /// Optional status chips rendered on the header's trailing edge — the
+        /// per-node status vocabulary a single title / subtitle / color / icon
+        /// can't express. Null or empty hides the chip row. Keep these
+        /// <b>node-local</b> (readable from this node alone); derived /
+        /// cross-node facts belong on the canvas, not here.
+        /// </summary>
+        public virtual IReadOnlyList<NodeBadge> DisplayBadges => null;
+
+        /// <summary>
+        /// When true, the editor lets the user rename this node inline by
+        /// double-clicking its header title. Default false (opt-in) — a node
+        /// whose <see cref="DisplayTitle"/> is computed from something other
+        /// than the subasset name should also override <see cref="Rename"/>.
+        /// </summary>
+        public virtual bool CanRename => false;
+
+        /// <summary>
+        /// Apply an inline-rename commit. The editor wraps the call in an
+        /// <c>Undo.RecordObject</c> on this node + <c>SetDirty</c>, so an
+        /// override may write a serialized field directly. Default writes the
+        /// subasset <c>name</c> (which the default <see cref="DisplayTitle"/>
+        /// reflects).
+        /// </summary>
+        public virtual void Rename(string title) => name = title;
+
         /// <summary>Override to declare input ports. Default: one anonymous input.</summary>
         public virtual IReadOnlyList<GraphPortDef> InputPorts => GraphPortDef.SingleAnonymous;
 

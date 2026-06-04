@@ -65,9 +65,16 @@ namespace CupkekGames.Graphs.Editor
         protected readonly VisualElement _header;
         protected readonly Label _iconLabel;
         protected readonly Label _titleLabel;
+        protected readonly VisualElement _badgeRow;
         protected readonly Label _subtitleLabel;
         protected readonly VisualElement _portRow;
         protected readonly VisualElement _body;
+
+        // Worst validation severity + message for this node, pushed by the
+        // canvas after each Validate() pass (see GraphCanvas.ApplyNodeValidation).
+        // Null = clean. Drives the header chip + a tinted card border.
+        GraphValidationIssue.SeverityLevel? _validation;
+        string _validationMessage;
 
         readonly List<PortElement> _inputPorts = new List<PortElement>();
         readonly List<PortElement> _outputPorts = new List<PortElement>();
@@ -208,6 +215,27 @@ namespace CupkekGames.Graphs.Editor
             _titleLabel.pickingMode = PickingMode.Ignore;
             _header.Add(_titleLabel);
 
+            // Spacer pushes the badge row to the header's trailing edge.
+            var headerSpacer = new VisualElement
+            {
+                style = { flexGrow = 1f },
+                pickingMode = PickingMode.Ignore,
+            };
+            _header.Add(headerSpacer);
+
+            // Trailing status-chip row — fed from GraphNodeSO.DisplayBadges plus
+            // a leading validation chip (RebuildBadges). Hidden until it has
+            // content. The row ignores picking; individual pills are pickable so
+            // their tooltips show.
+            _badgeRow = new VisualElement();
+            _badgeRow.AddToClassList("cgg-graph-node__badge-row");
+            _badgeRow.style.flexDirection = FlexDirection.Row;
+            _badgeRow.style.alignItems = Align.Center;
+            _badgeRow.style.flexShrink = 0f;
+            _badgeRow.style.display = DisplayStyle.None;
+            _badgeRow.pickingMode = PickingMode.Ignore;
+            _header.Add(_badgeRow);
+
             _subtitleLabel = new Label();
             _subtitleLabel.AddToClassList("cgg-graph-node__subtitle");
             _subtitleLabel.style.color = SubtitleColor;
@@ -245,14 +273,24 @@ namespace CupkekGames.Graphs.Editor
 
             this.AddManipulator(new NodeDragManipulator());
 
-            // Double-click a sub-graph node to descend into its referenced graph.
-            // Uses MouseDownEvent (not ClickEvent) to match GroupElement's title
-            // double-click: the attached NodeDragManipulator captures the pointer,
-            // which suppresses synthesized ClickEvents. Nodes that aren't
-            // ISubGraphNode (or have no graph assigned) fall through to drag/select.
+            // Double-click handling. Uses MouseDownEvent (not ClickEvent) to
+            // match GroupElement's title double-click: the attached
+            // NodeDragManipulator captures the pointer, which suppresses
+            // synthesized ClickEvents.
+            //   • header double-click on a renameable node → inline rename
+            //   • otherwise, a sub-graph node → descend into its graph
+            //   • anything else → falls through to drag/select
             RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button != 0 || evt.clickCount != 2) return; // double-click only
+
+                if (_node != null && _node.CanRename && IsWithinHeader(evt.localMousePosition))
+                {
+                    BeginInlineRename();
+                    evt.StopPropagation();
+                    return;
+                }
+
                 if (_node is ISubGraphNode sg && sg.SubGraph != null)
                 {
                     _canvas?.RequestDescend(sg.SubGraph);
@@ -300,9 +338,14 @@ namespace CupkekGames.Graphs.Editor
                 container.Add(field);
             }
 
-            // Inline edits dirty the bound asset — notify the canvas so the
-            // window's "*" flips when a field changes.
-            container.TrackSerializedObjectValue(so, _ => _canvas?.NotifyGraphChanged());
+            // Inline edits dirty the bound asset — refresh this card's
+            // header (title / subtitle / badges may derive from the edited
+            // field) and notify the canvas so the window's "*" flips.
+            container.TrackSerializedObjectValue(so, _ =>
+            {
+                RefreshDisplay();
+                _canvas?.NotifyGraphChanged();
+            });
         }
 
         // ---------------------------------------------------------------
@@ -364,6 +407,158 @@ namespace CupkekGames.Graphs.Editor
                 _subtitleLabel.style.display = DisplayStyle.Flex;
                 _subtitleLabel.text = subtitle;
             }
+
+            RebuildBadges();
+        }
+
+        // ---------------------------------------------------------------
+        // Header status badges (DisplayBadges + validation chip)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Rebuild the trailing chip row: a leading validation chip (when this
+        /// node carries an issue) followed by one pill per
+        /// <see cref="GraphNodeSO.DisplayBadges"/> entry. Hides the row when
+        /// empty so a clean node shows no chrome.
+        /// </summary>
+        void RebuildBadges()
+        {
+            if (_badgeRow == null) return;
+            _badgeRow.Clear();
+
+            if (_validation.HasValue)
+            {
+                bool err = _validation.Value == GraphValidationIssue.SeverityLevel.Error;
+                _badgeRow.Add(MakeBadgePill(
+                    "!",
+                    err ? GraphTheme.ValidationError : GraphTheme.ValidationWarning,
+                    string.IsNullOrEmpty(_validationMessage)
+                        ? (err ? "Error" : "Warning")
+                        : _validationMessage));
+            }
+
+            var badges = _node?.DisplayBadges;
+            if (badges != null)
+            {
+                for (int i = 0; i < badges.Count; i++)
+                    _badgeRow.Add(MakeBadgePill(badges[i].Text, badges[i].Tint, badges[i].Tooltip));
+            }
+
+            _badgeRow.style.display = _badgeRow.childCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        // One status pill. Pickable (default) so its tooltip shows on hover;
+        // it doesn't stop propagation, so a drag/select started over a pill
+        // still bubbles to the card's manipulators.
+        static Label MakeBadgePill(string text, Color tint, string tooltip)
+        {
+            var pill = new Label(text ?? string.Empty)
+            {
+                style =
+                {
+                    fontSize = 9,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = Color.white,
+                    backgroundColor = tint,
+                    marginLeft = 3f,
+                    paddingLeft = 4f,
+                    paddingRight = 4f,
+                    paddingTop = 1f,
+                    paddingBottom = 1f,
+                    borderTopLeftRadius = 3f,
+                    borderTopRightRadius = 3f,
+                    borderBottomLeftRadius = 3f,
+                    borderBottomRightRadius = 3f,
+                },
+            };
+            if (!string.IsNullOrEmpty(tooltip)) pill.tooltip = tooltip;
+            return pill;
+        }
+
+        /// <summary>
+        /// Push this node's worst validation state (or null to clear). Called
+        /// by <see cref="GraphCanvas.ApplyNodeValidation"/> after each validate
+        /// pass — drives the header chip + the tinted card border. Validation
+        /// is single-sourced from the footer; this only displays it.
+        /// </summary>
+        internal void SetValidationState(GraphValidationIssue.SeverityLevel? severity, string message)
+        {
+            if (_validation == severity && _validationMessage == message) return;
+            _validation = severity;
+            _validationMessage = message;
+            UpdateBorder();
+            RebuildBadges();
+        }
+
+        // True when a card-local point lands in the header strip (the rename
+        // hit-region). Header sits at the top of the card; everything at or
+        // above its bottom edge counts. NaN before first layout → treated as
+        // "not in header" so the double-click falls through.
+        bool IsWithinHeader(Vector2 localPoint)
+        {
+            float headerBottom = _header.layout.yMax;
+            if (float.IsNaN(headerBottom)) return false;
+            return localPoint.y <= headerBottom;
+        }
+
+        // Swap the title label for a TextField; commit on Enter/blur, cancel on
+        // Escape. The field shields the canvas's key shortcuts (Delete / F /
+        // Ctrl+*) while focused so typing doesn't delete the node.
+        void BeginInlineRename()
+        {
+            if (_node == null || !_node.CanRename) return;
+
+            int titleIndex = _header.IndexOf(_titleLabel);
+            // Seed from the raw DisplayTitle (not the label text, which may
+            // carry the start-node "★ " prefix).
+            string current = _node.DisplayTitle ?? string.Empty;
+            var field = new TextField { value = current };
+            field.style.flexGrow = 1f;
+            field.style.marginLeft = 0f;
+            field.style.marginRight = 0f;
+            field.style.fontSize = 13;
+
+            _titleLabel.style.display = DisplayStyle.None;
+            _header.Insert(titleIndex, field);
+            field.Focus();
+            field.SelectAll();
+
+            bool finished = false;
+            void Finish(bool commit)
+            {
+                if (finished) return;
+                finished = true;
+
+                string newValue = field.value;
+                field.RemoveFromHierarchy();
+                _titleLabel.style.display = DisplayStyle.Flex;
+
+                if (commit)
+                {
+                    string trimmed = (newValue ?? string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(trimmed) && trimmed != current)
+                    {
+                        Undo.RecordObject(_node, "Rename Node");
+                        _node.Rename(trimmed);
+                        EditorUtility.SetDirty(_node);
+                        _canvas?.NotifyGraphChanged();
+                    }
+                }
+
+                RefreshDisplay();
+            }
+
+            field.RegisterCallback<BlurEvent>(_ => Finish(true));
+            field.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                    Finish(true);
+                else if (evt.keyCode == KeyCode.Escape)
+                    Finish(false);
+                // Shield the canvas's key shortcuts while editing (Delete would
+                // otherwise delete the node, F would fit-view, etc.).
+                evt.StopPropagation();
+            });
         }
 
         /// <summary>
@@ -530,9 +725,21 @@ namespace CupkekGames.Graphs.Editor
                 // Selection: a 2px SelectionAccent ring on all four edges.
                 // The start node keeps its cue on the accent bar/header, so
                 // selection + start now coexist (was: start outline lost when
-                // a start node got selected).
+                // a start node got selected). Selection dominates the
+                // validation tint, but the validation chip stays visible.
                 SetBorder(2f, SelectedBorderColor, SelectedBorderColor,
                           SelectedBorderColor, SelectedBorderColor);
+                return;
+            }
+
+            if (_validation.HasValue)
+            {
+                // Validation tint: a 2px error/warning ring so the offending
+                // card is impossible to miss (pairs with the header chip).
+                Color v = _validation.Value == GraphValidationIssue.SeverityLevel.Error
+                    ? GraphTheme.ValidationError
+                    : GraphTheme.ValidationWarning;
+                SetBorder(2f, v, v, v, v);
                 return;
             }
 

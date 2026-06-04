@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CupkekGames.Data.Primitives;
 
 namespace CupkekGames.Graphs.Editor
@@ -118,6 +119,41 @@ namespace CupkekGames.Graphs.Editor
                 if (n != null && n.Guid == guid)
                     return n;
             return null;
+        }
+
+        /// <summary>
+        /// Push per-node validation state onto the live node elements: each
+        /// node that owns an issue gets its <b>worst</b> severity
+        /// (Error &gt; Warning &gt; Info) + message; every other node is
+        /// cleared. Called by the <c>ValidationFooter</c> after it computes the
+        /// issue set, so validation stays single-sourced (the footer runs the
+        /// one <see cref="GraphAssetSO.Validate"/> pass; this only displays it
+        /// on the cards).
+        /// </summary>
+        public void ApplyNodeValidation(IReadOnlyList<GraphValidationIssue> issues)
+        {
+            var worst = new Dictionary<string, GraphValidationIssue>();
+            if (issues != null)
+            {
+                foreach (var iss in issues)
+                {
+                    if (iss == null) continue;
+                    string g = iss.TargetNodeGuid.ValueStr;
+                    if (string.IsNullOrEmpty(g)) continue;
+                    if (!worst.TryGetValue(g, out var cur) || iss.Severity > cur.Severity)
+                        worst[g] = iss;
+                }
+            }
+
+            foreach (var kvp in _nodeElements)
+            {
+                var ne = kvp.Value;
+                if (ne?.Node == null) continue;
+                if (worst.TryGetValue(ne.Node.Guid.ValueStr, out var iss))
+                    ne.SetValidationState(iss.Severity, iss.Message);
+                else
+                    ne.SetValidationState(null, null);
+            }
         }
 
         /// <summary>

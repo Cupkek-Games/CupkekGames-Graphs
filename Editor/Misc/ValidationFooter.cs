@@ -128,6 +128,12 @@ namespace CupkekGames.Graphs.Editor
             }
 
             _currentIssues.AddRange(_canvas.Asset.Validate());
+
+            // Fan the issue set out to the cards (worst-severity chip + tinted
+            // border per node). Done before the early-out so a now-clean graph
+            // clears every card's prior state.
+            _canvas.ApplyNodeValidation(_currentIssues);
+
             if (_currentIssues.Count == 0)
             {
                 style.display = DisplayStyle.None;
