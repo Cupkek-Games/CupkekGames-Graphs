@@ -38,5 +38,20 @@ namespace CupkekGames.Graphs
         IReadOnlyList<string> InstanceLabels { get; }
         int SelectedInstance { get; set; }
     }
+
+    /// <summary>
+    /// Optional capability for a source whose state changes <b>continuously</b>
+    /// (e.g. a behaviour-tree ticking every frame) rather than on discrete events.
+    /// The canvas ticks <see cref="Poll"/> via <c>EditorApplication.update</c> while
+    /// the source is active; the source samples its state there and raises
+    /// <see cref="IGraphRuntimeStateSource.Changed"/> only when it actually changed
+    /// (coalesce — don't fire every frame). This lets a continuous source live in the
+    /// runtime assembly with no <c>EditorApplication</c> dependency of its own, just
+    /// like a discrete (push-driven) source.
+    /// </summary>
+    public interface IGraphRuntimePollable
+    {
+        void Poll();
+    }
 }
 #endif
