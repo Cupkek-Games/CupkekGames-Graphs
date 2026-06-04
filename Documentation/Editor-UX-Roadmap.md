@@ -8,17 +8,44 @@ Items are ordered by **payoff × reuse** — Phase 1 is the spine everything els
 
 ---
 
-## Status
+## Status — COMPLETE (2026-06-04 → 06-05)
 
-- **Phase 1 — DONE + committed (2026-06-04).** graphs `7f634a6`, luna `6ba4e15d`. Compile-verified green.
-- **Batch 2 (4A / 2B / 2A) — IMPLEMENTED (2026-06-04), pending Unity compile-verify.** 3B (port labels) was tried and **dropped** on review — no labels wanted.
-- **Batch 3 — scoped, mostly not started:**
-  - **Runtime debug overlay** (generic, base package) — DESIGNED, see [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md); sourcing model locked = layered (render contract + pluggable source); build pending.
-  - **4C id ergonomics** — locked: node stays the id source; add sibling-prefix autocomplete + cross-catalog uniqueness check. Build pending.
-  - **Catalog wiring warning** — locked (warning only): flag a NavGraph not referenced by any registered `NavDestinationCatalog`. Build pending.
-  - **2C** frame-selected + align/distribute — locked. Build pending.
-  - **4B nav inspector** — retire the legacy `NavDestinationSO` Destinations tab (the runtime overlay supersedes the live-debug need); keep Live State text tab.
-- Remaining (3A breadcrumbs) — proposed, not started.
+Everything below shipped, compiled green, and (where noted) has test coverage. The base graph editor is now legible at author time *and* runtime, and was audited twice for genericness (a 7-agent sweep + the BT-migration pass).
+
+### Shipped
+
+| Area | What | Commits |
+|---|---|---|
+| **Phase 1** header-status | badge chips (`NodeBadge`/`DisplayBadges`), inline rename (`CanRename`/`Rename`), per-node validation chip + border, nav `id`-as-title | graphs `7f634a6` · luna `6ba4e15d` |
+| **Batch 2** | directed-edge arrowhead (small filled triangle, `DirectedEdges` opt-in), toolbar Find, derived tab-badge + per-channel tint | graphs `74c4076` · luna `d94d3300` |
+| **`GraphTopology` de-dup** | promoted `Reaches`/`WouldCreateCycle` + `Adjacency` (Roots/ChildrenOf/ParentOf/PreOrder); `EnforceAcyclic` opt-in; collapsed the nav + BT cycle checks, `AutoLayoutEngine`, BT runtime child-resolution | graphs `95479fe` + tests `85f9c0e` · bt `9ecb394` · luna `fab7a51f` |
+| **Zero polling** | Live State tab → event-driven; nav polls nowhere (runtime or editor) | luna `4d49af16` |
+| **Legacy removal** | deleted `NavDestinationSO`/`UILayerSO` + editors + 22 sample assets; inspector is Live-State-only | luna `ccac052d` |
+| **Multi-host topology merge** | union of per-host topologies → a destination in one graph (e.g. a global Settings on a persistent host) reachable from every scene; **no global-destination type** | luna `99c3763d` + tests `b4e49020` |
+| **Arrange tools (2C)** | frame-selected (`F`), align, distribute | graphs `879d77c` |
+| **Nav health check (4C / wiring warning)** | cross-graph dup-id detection (catalog bake + `Luna Nav Health Check` menu: dup ids, graphs-not-in-catalog, catalogs-not-registered) | luna `f6877d02` |
+| **Id autocomplete (4C)** | `[NavId]` + drawer — sibling-prefix suggestions across all NavGraphs | luna `3062fad3` |
+| **Runtime debug overlay** | generic base (`GraphNodeRuntimeState`, `IGraphRuntimeStateSource`, `CreateRuntimeStateSource`, glow + pill render, event-driven) + nav source (live destinations glow) | graphs `cabd9cf` · luna `3039b591` |
+| **BT overlay + generalize** | `IGraphRuntimePollable` (continuous sources) + instance-picker UI; BT source (running/ok/fail); deleted the ad-hoc per-node-polling `BTNodeElement` | graphs `bf3d0af` · bt `3089dc8` |
+
+Design docs: [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md) · [NavGraph-MultiHost-Topology.md](../../com.cupkekgames.luna/Documentation/NavGraph-MultiHost-Topology.md).
+
+### Skipped / deferred / declined (and why)
+
+| Item | Verdict | Why |
+|---|---|---|
+| **3B port labels** | **dropped** (tried) | Always-visible "parent"/"children" labels added then removed on review — unwanted clutter. `GraphPortDef.Label` stays an unused field. |
+| **Nav-forest dedups** (`NavTopology` Pass 2, `LunaLayerHost.OrderedForSpawn`) | **declined** | Close reading: Pass 2 needs multi-parent *validation* + the raw `OrderIndex` int (`Adjacency` exposes neither); `OrderedForSpawn` is coupled to `NavTopology.Entry` and **boot-critical** with ~zero code savings. `GraphTopology.PreOrder`/`ParentOf` exist if a future *tested* refactor wants them. |
+| **3A sub-graph breadcrumbs** | **deferred** | Pure editor code, but only meaningful once sub-graphs are actually authored/used. Build when nesting is real. |
+| **Separate "global destination" type / definition asset** | **rejected (design)** | "Global" = a normal NavGraph on a persistent (`_persistAcrossScenes`) host; opening = `Push(id)`, not containment — Settings is a global *root*, never duplicated. No special type. |
+| **Sub-graph composition** (cross-graph references) | **separate non-goal** | The shared-global case is solved by the topology *merge* + one persistent host. Sub-graph references are for *composing reusable sub-flows* (distinct instances) — a different feature, unbuilt. |
+| **Cross-graph containment edges** | **unsupported (design)** | Global destinations are roots; per-graph `IsTab`/`ChannelId` stay valid under the union. Not needed. |
+| **Runtime overlay polling** | **rejected** | Event-driven (push) instead, with opt-in `IGraphRuntimePollable` only for continuous sources (BT). No idle work. |
+| **"Decorate-on-structure-change" base hook** | **candidate, not built** | `NavGraphCanvas` subscribes `GraphChanged` → `DecorateFromTopology`. Could be a base hook — but each domain subscribing the event is fine; build only when a 2nd domain wants structural decoration. |
+| **Generalize `ChannelTint` / `IsTab`-`ChannelId` derivation / `LunaLayerHost` spawn** | **kept domain-local (audited)** | The genericness audit confirmed these are correctly nav-specific — do NOT generalize. |
+
+### Verification still owed (user-side, no code)
+Play-mode visual checks: nav overlay (destinations glow on `Push`/`Pop`) and BT overlay (running/ok/fail + the instance dropdown with >1 agent).
 
 ### Decisions locked — Phase 1 (2026-06-04)
 
@@ -49,6 +76,8 @@ Items are ordered by **payoff × reuse** — Phase 1 is the spine everything els
 - The generic green ★ "start node" affordance never fires for nav (a forest with empty `StartNodeGuid`), while nav's real entry concept (`StartVisible`, possibly several) has no cue at all. Wasted visual budget.
 
 ---
+
+> **The sections below are the original design detail — all shipped (see the Status table).** Implementation reorganized some numbering: **4A** (derived nav semantics) landed in **Batch 2**; **4B** became "retire the legacy Destinations tab + keep an event-driven Live State" (superseded by the runtime overlay + the new-model `Luna Nav Health Check`); **3B** was dropped. Kept here as the design record + rationale.
 
 ## Phase 1 — Header status system (central) + nav consumer
 
@@ -184,10 +213,6 @@ Free-string ids with only duplicate detection. Add right-click "Copy id" and dot
 
 ---
 
-## Suggested sequence
+## Original sequence (historical)
 
-1. **Phase 1** (1A → 1B → 1C → 1D) as one PR — the reusable header-status system + nav payoff.
-2. **Phase 2** as independent polish whenever.
-3. **Phase 3 / Phase 4** after the nav migration assets settle (Phase 4 depends on the new model being the only one).
-
-Phase 1 is the only phase with cross-package coupling, and it's one-directional (graphs exposes, nav consumes) — no nav change is required for the graphs API to land.
+This was the planned order — Phase 1 (header-status spine) → Phase 2 (canvas polish) → Phases 3/4 after the nav migration settled. It held up: Phase 1 shipped as one slice, Batch 2 followed, the `GraphTopology` de-dup + topology merge + runtime overlay came out of the audit/architecture work, and the legacy-asset removal unblocked the nav-inspector simplification. See the **Status** table at the top for what actually landed and **Skipped / deferred / declined** for what didn't.
