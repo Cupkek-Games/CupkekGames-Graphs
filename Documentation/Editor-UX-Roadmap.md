@@ -12,7 +12,13 @@ Items are ordered by **payoff × reuse** — Phase 1 is the spine everything els
 
 - **Phase 1 — DONE + committed (2026-06-04).** graphs `7f634a6`, luna `6ba4e15d`. Compile-verified green.
 - **Batch 2 (4A / 2B / 2A) — IMPLEMENTED (2026-06-04), pending Unity compile-verify.** 3B (port labels) was tried and **dropped** on review — no labels wanted.
-- Remaining (3A breadcrumbs, 4B nav inspector, 4C id ergonomics) — proposed, not started.
+- **Batch 3 — scoped, mostly not started:**
+  - **Runtime debug overlay** (generic, base package) — DESIGNED, see [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md); sourcing model locked = layered (render contract + pluggable source); build pending.
+  - **4C id ergonomics** — locked: node stays the id source; add sibling-prefix autocomplete + cross-catalog uniqueness check. Build pending.
+  - **Catalog wiring warning** — locked (warning only): flag a NavGraph not referenced by any registered `NavDestinationCatalog`. Build pending.
+  - **2C** frame-selected + align/distribute — locked. Build pending.
+  - **4B nav inspector** — retire the legacy `NavDestinationSO` Destinations tab (the runtime overlay supersedes the live-debug need); keep Live State text tab.
+- Remaining (3A breadcrumbs) — proposed, not started.
 
 ### Decisions locked — Phase 1 (2026-06-04)
 

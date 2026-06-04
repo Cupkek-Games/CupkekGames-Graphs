@@ -209,11 +209,20 @@ namespace CupkekGames.Graphs.Editor
             => string.IsNullOrEmpty(a) ? string.IsNullOrEmpty(b) : a == b;
 
         /// <summary>
+        /// When true, the base <see cref="CanConnect"/> blocks any edge that
+        /// would close a cycle (via <see cref="GraphTopology.WouldCreateCycle"/>),
+        /// keeping the graph acyclic. Default false. Forest/tree domains (nav
+        /// containment, behaviour-trees) override to true instead of hand-rolling
+        /// their own reachability walk.
+        /// </summary>
+        protected virtual bool EnforceAcyclic => false;
+
+        /// <summary>
         /// Connection-shape validation. Subclasses of <see cref="GraphCanvas"/>
-        /// override to enforce graph-specific rules (no cycles in BT, no
-        /// duplicate edges, port-type compatibility, ...). Default: allow if
-        /// the target's port is multi-capacity, or single-capacity with no
-        /// existing inbound edge.
+        /// override to enforce graph-specific rules (port-type compatibility,
+        /// domain sink rules, ...) — but acyclicity is built in via
+        /// <see cref="EnforceAcyclic"/>. Default: allow if the target's port is
+        /// multi-capacity, or single-capacity with no existing inbound edge.
         /// </summary>
         protected virtual bool CanConnect(PortElement source, PortElement target)
         {
@@ -228,6 +237,14 @@ namespace CupkekGames.Graphs.Editor
                         return false; // already occupied
                 }
             }
+
+            // Acyclic opt-in: block an edge whose target can already reach its
+            // source (the new edge would close a loop). Replaces the per-domain
+            // WouldCreateCycle copies in NavGraphCanvas / BehaviourTreeCanvas.
+            if (EnforceAcyclic
+                && source?.OwnerNode?.Node != null && target?.OwnerNode?.Node != null
+                && GraphTopology.WouldCreateCycle(Asset, source.OwnerNode.Node.Guid, target.OwnerNode.Node.Guid))
+                return false;
 
             return true;
         }

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using CupkekGames.Data.Primitives;
 using UnityEditor;
 using UnityEngine;
 
@@ -33,29 +32,17 @@ namespace CupkekGames.Graphs.Editor
         {
             if (asset == null || asset.Nodes.Count == 0) return;
 
-            // Inbound count per node — roots are the ones with zero.
-            var inboundCount = new Dictionary<string, int>();
-            foreach (var c in asset.Connections)
-            {
-                inboundCount.TryGetValue(c.TargetNodeGuid.ValueStr, out var n);
-                inboundCount[c.TargetNodeGuid.ValueStr] = n + 1;
-            }
-
-            var roots = new List<GraphNodeSO>();
-            foreach (var n in asset.Nodes)
-            {
-                if (n == null) continue;
-                if (!inboundCount.ContainsKey(n.Guid.ValueStr))
-                    roots.Add(n);
-            }
-
+            // Roots (no inbound) + ordered children come from the shared forest
+            // view — no longer hand-rolled here (see GraphTopology).
+            var adj = GraphTopology.BuildAdjacency(asset);
+            var roots = adj.Roots;
             if (roots.Count == 0) return;
 
             var visited = new HashSet<string>();
             var trees = new List<Node>();
             foreach (var r in roots)
             {
-                var tree = BuildTree(asset, r, visited);
+                var tree = BuildTree(adj, r, visited);
                 if (tree != null) trees.Add(tree);
             }
 
@@ -88,36 +75,20 @@ namespace CupkekGames.Graphs.Editor
             public Vector2 Position;
         }
 
-        static Node BuildTree(GraphAssetSO asset, GraphNodeSO source, HashSet<string> visited)
+        static Node BuildTree(GraphTopology.Adjacency adj, GraphNodeSO source, HashSet<string> visited)
         {
             if (source == null || !visited.Add(source.Guid.ValueStr)) return null;
 
             var node = new Node { Source = source };
 
-            // Children ordered by GraphConnection.OrderIndex — matches the
-            // composite-children semantic the runtime uses.
-            var ordered = new List<GraphConnection>();
-            foreach (var c in asset.Connections)
-                if (c.SourceNodeGuid == source.Guid)
-                    ordered.Add(c);
-            ordered.Sort((a, b) => a.OrderIndex.CompareTo(b.OrderIndex));
-
-            foreach (var conn in ordered)
+            // Children already ordered by GraphConnection.OrderIndex.
+            var children = adj.ChildrenOf(source);
+            for (int i = 0; i < children.Count; i++)
             {
-                var target = FindNode(asset, conn.TargetNodeGuid);
-                if (target == null) continue;
-
-                var child = BuildTree(asset, target, visited);
+                var child = BuildTree(adj, children[i], visited);
                 if (child != null) node.Children.Add(child);
             }
             return node;
-        }
-
-        static GraphNodeSO FindNode(GraphAssetSO asset, SerializedGuid guid)
-        {
-            foreach (var n in asset.Nodes)
-                if (n != null && n.Guid == guid) return n;
-            return null;
         }
 
         static float ComputeWidth(Node n)
