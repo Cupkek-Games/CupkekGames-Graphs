@@ -434,6 +434,11 @@ namespace CupkekGames.Graphs.Editor
             painter.BezierCurveTo(c1, c2, end);
             painter.Stroke();
 
+            // Direction arrowhead at the curve midpoint (source -> target) for
+            // graphs whose edges carry direction (e.g. nav containment).
+            if (Canvas?.Asset != null && Canvas.Asset.DirectedEdges)
+                DrawDirectionArrowhead(painter, start, c1, c2, end, color);
+
             // Endpoint grab handles — small filled dots at both ends make the
             // reroute model legible on hover. Never during a drag (hover is
             // already false then) and not while selected (selection reads as a
@@ -449,6 +454,36 @@ namespace CupkekGames.Graphs.Editor
                 p.Arc(end, 3.5f, 0f, 360f);
                 p.Fill();
             }
+        }
+
+        // Fill a small triangle at the curve midpoint, pointing along the
+        // tangent (source -> target). Sized in canvas-world px so it scales with
+        // zoom like the wire itself.
+        static void DrawDirectionArrowhead(Painter2D p, Vector2 start, Vector2 c1, Vector2 c2, Vector2 end, Color color)
+        {
+            const float Front = 3.5f;   // tip ahead of the midpoint
+            const float Back = 2.5f;    // base behind the midpoint
+            const float HalfW = 3.25f;  // half the base width
+
+            Vector2 mid = SampleBezier(start, c1, c2, end, 0.5f);
+            // Cubic derivative at t=0.5 (u=0.5): 0.75(c1-start) + 1.5(c2-c1) + 0.75(end-c2).
+            Vector2 tangent = 0.75f * (c1 - start) + 1.5f * (c2 - c1) + 0.75f * (end - c2);
+            if (tangent.sqrMagnitude < 1e-6f) return;
+            Vector2 dir = tangent.normalized;
+            Vector2 perp = new Vector2(-dir.y, dir.x);
+
+            Vector2 tip = mid + dir * Front;
+            Vector2 baseC = mid - dir * Back;
+            Vector2 baseL = baseC + perp * HalfW;
+            Vector2 baseR = baseC - perp * HalfW;
+
+            p.fillColor = color;
+            p.BeginPath();
+            p.MoveTo(tip);
+            p.LineTo(baseL);
+            p.LineTo(baseR);
+            p.ClosePath();
+            p.Fill();
         }
 
         static void ComputeControlPoints(Vector2 start, Vector2 end, out Vector2 c1, out Vector2 c2)

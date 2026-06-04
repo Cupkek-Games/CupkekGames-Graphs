@@ -10,10 +10,11 @@ Items are ordered by **payoff × reuse** — Phase 1 is the spine everything els
 
 ## Status
 
-- **Phase 1 — IMPLEMENTED (2026-06-04), pending Unity compile-verify.** Decisions below are locked.
-- Phases 2–4 — proposed, not started.
+- **Phase 1 — DONE + committed (2026-06-04).** graphs `7f634a6`, luna `6ba4e15d`. Compile-verified green.
+- **Batch 2 (4A / 2B / 2A) — IMPLEMENTED (2026-06-04), pending Unity compile-verify.** 3B (port labels) was tried and **dropped** on review — no labels wanted.
+- Remaining (3A breadcrumbs, 4B nav inspector, 4C id ergonomics) — proposed, not started.
 
-### Decisions locked (2026-06-04)
+### Decisions locked — Phase 1 (2026-06-04)
 
 | Feature | Decision |
 |---|---|
@@ -21,6 +22,15 @@ Items are ordered by **payoff × reuse** — Phase 1 is the spine everything els
 | **1B** Rename trigger | **Double-click the header** → inline `TextField`, commit on Enter/blur, cancel on Esc. Opt-in per node via `CanRename`. |
 | **1C** Validation cue | **Border tint + chip** — offending card gets a 2px error/warning border AND a leading `!` chip (tooltip = the issue message). |
 | **1D** Nav headline | **id as title, no subtitle** — `NavNode.DisplayTitle => _id`; rename writes `_id`; flags shown as node-local badges. |
+
+### Decisions locked — Batch 2 (2026-06-04)
+
+| Feature | Decision | Shape |
+|---|---|---|
+| **4A** Derived nav semantics | **Tab badges + channel tint** | `NavGraphCanvas` builds `NavTopology` on `GraphChanged`; pushes a derived "tab" badge (`NodeElement.SetExtraBadges`) + a per-channel accent tint (`SetAccentTint`) keyed off `Entry.ChannelId`. |
+| **2B** Directed edges | **Midpoint arrowhead (small filled triangle)** | `GraphAssetSO.DirectedEdges` opt-in (NavGraph = true); `EdgeElement` fills a compact triangle at the curve midpoint along the tangent. |
+| **2A** Find / jump | **Toolbar search field** | Always-visible `Find` field in `GraphToolbar`; highlights matches (amber border via `SetSearchHighlight`), jumps to first, Enter cycles, Esc clears. |
+| **3B** Port labels | **Dropped** | Tried always-visible "parent"/"children" labels; removed on review (`PortElement` label rendering + `NavNode` port labels reverted). `GraphPortDef.Label` stays an unused field. |
 
 ---
 

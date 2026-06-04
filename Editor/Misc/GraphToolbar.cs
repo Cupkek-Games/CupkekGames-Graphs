@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -19,6 +20,10 @@ namespace CupkekGames.Graphs.Editor
         Button _saveButton;
         Button _discardButton;
         Button _backButton;
+
+        TextField _searchField;
+        readonly List<NodeElement> _searchMatches = new List<NodeElement>();
+        int _searchIndex;
 
         public GraphToolbar(GraphEditorWindow window)
         {
@@ -62,6 +67,25 @@ namespace CupkekGames.Graphs.Editor
 
             var spacer = new VisualElement { style = { flexGrow = 1f } };
             Add(spacer);
+
+            // Find field — type to highlight matching nodes (title / id) and
+            // jump the canvas to the first match; Enter cycles, Esc clears.
+            var findLabel = new Label("Find")
+            {
+                style = { color = GraphTheme.TextSecondary, fontSize = 11, marginRight = 4f },
+            };
+            Add(findLabel);
+
+            _searchField = new TextField
+            {
+                tooltip = "Find a node by title / id. Enter cycles matches; Esc clears.",
+                style = { width = 150f, marginRight = 0f },
+            };
+            _searchField.RegisterValueChangedCallback(e => OnSearchChanged(e.newValue));
+            _searchField.RegisterCallback<KeyDownEvent>(OnSearchKeyDown);
+            Add(_searchField);
+
+            AddSeparator();
 
             Add(MakeToggle("Grid", () => _window.Canvas?.GridVisible ?? true,
                 v => { if (_window.Canvas != null) _window.Canvas.GridVisible = v; }));
@@ -223,6 +247,49 @@ namespace CupkekGames.Graphs.Editor
             {
                 _discardButton.SetEnabled(dirty);
                 _discardButton.style.opacity = dirty ? 1f : 0.5f;
+            }
+        }
+
+        // Recompute matches on every keystroke: highlight matching cards
+        // (title / id substring, case-insensitive) and jump to the first.
+        void OnSearchChanged(string query)
+        {
+            var canvas = _window.Canvas;
+            if (canvas == null) return;
+
+            _searchMatches.Clear();
+            query = (query ?? string.Empty).Trim();
+
+            foreach (var ne in canvas.NodeElements)
+            {
+                if (ne?.Node == null) continue;
+                bool match = query.Length > 0
+                    && ne.Node.DisplayTitle != null
+                    && ne.Node.DisplayTitle.IndexOf(query, System.StringComparison.OrdinalIgnoreCase) >= 0;
+                ne.SetSearchHighlight(match);
+                if (match) _searchMatches.Add(ne);
+            }
+
+            _searchIndex = 0;
+            if (_searchMatches.Count > 0)
+                canvas.FocusOnNode(_searchMatches[0]);
+        }
+
+        void OnSearchKeyDown(KeyDownEvent evt)
+        {
+            if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+            {
+                if (_searchMatches.Count > 0)
+                {
+                    _searchIndex = (_searchIndex + 1) % _searchMatches.Count;
+                    _window.Canvas?.FocusOnNode(_searchMatches[_searchIndex]);
+                }
+                evt.StopPropagation();
+            }
+            else if (evt.keyCode == KeyCode.Escape)
+            {
+                _searchField.value = string.Empty; // triggers OnSearchChanged → clears highlights
+                evt.StopPropagation();
             }
         }
 

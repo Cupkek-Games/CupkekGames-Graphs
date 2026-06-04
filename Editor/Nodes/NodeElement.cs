@@ -76,6 +76,12 @@ namespace CupkekGames.Graphs.Editor
         GraphValidationIssue.SeverityLevel? _validation;
         string _validationMessage;
 
+        // Canvas-pushed decorations — domain canvases derive these from graph
+        // context the node alone can't see (e.g. nav tab-ness / channel).
+        Color? _accentTint;                     // overrides the accent-bar color
+        IReadOnlyList<NodeBadge> _extraBadges;   // appended after the node's own badges
+        bool _searchHighlight;                   // toolbar-find match outline
+
         readonly List<PortElement> _inputPorts = new List<PortElement>();
         readonly List<PortElement> _outputPorts = new List<PortElement>();
 
@@ -382,7 +388,7 @@ namespace CupkekGames.Graphs.Editor
                 _accentBar.style.display = DisplayStyle.Flex;
                 _accentBar.style.backgroundColor = IsStartNode
                     ? GraphTheme.StartAccent
-                    : _node.HeaderColor;
+                    : (_accentTint ?? _node.HeaderColor);
             }
 
             // Optional icon glyph — hidden when the node returns null.
@@ -444,6 +450,13 @@ namespace CupkekGames.Graphs.Editor
                     _badgeRow.Add(MakeBadgePill(badges[i].Text, badges[i].Tint, badges[i].Tooltip));
             }
 
+            // Canvas-pushed derived badges (e.g. nav "tab") after the node's own.
+            if (_extraBadges != null)
+            {
+                for (int i = 0; i < _extraBadges.Count; i++)
+                    _badgeRow.Add(MakeBadgePill(_extraBadges[i].Text, _extraBadges[i].Tint, _extraBadges[i].Tooltip));
+            }
+
             _badgeRow.style.display = _badgeRow.childCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
@@ -488,6 +501,42 @@ namespace CupkekGames.Graphs.Editor
             _validationMessage = message;
             UpdateBorder();
             RebuildBadges();
+        }
+
+        /// <summary>
+        /// Override the accent-bar color (null restores the node's
+        /// <see cref="GraphNodeSO.HeaderColor"/>). A canvas decoration — domain
+        /// canvases use it to tint a derived grouping (e.g. nav channel) the
+        /// node can't compute alone.
+        /// </summary>
+        public void SetAccentTint(Color? tint)
+        {
+            if (_accentTint == tint) return;
+            _accentTint = tint;
+            if (_accentBar != null && !IsStartNode && _node != null)
+                _accentBar.style.backgroundColor = tint ?? _node.HeaderColor;
+        }
+
+        /// <summary>
+        /// Extra header badges appended after the node's own
+        /// <see cref="GraphNodeSO.DisplayBadges"/>. A canvas decoration for
+        /// derived facts (e.g. nav "tab", which depends on the parent).
+        /// </summary>
+        public void SetExtraBadges(IReadOnlyList<NodeBadge> badges)
+        {
+            _extraBadges = badges;
+            RebuildBadges();
+        }
+
+        /// <summary>
+        /// Toolbar-find match outline (amber). Below selection + validation in
+        /// border priority, above hover/default.
+        /// </summary>
+        internal void SetSearchHighlight(bool on)
+        {
+            if (_searchHighlight == on) return;
+            _searchHighlight = on;
+            UpdateBorder();
         }
 
         // True when a card-local point lands in the header strip (the rename
@@ -740,6 +789,15 @@ namespace CupkekGames.Graphs.Editor
                     ? GraphTheme.ValidationError
                     : GraphTheme.ValidationWarning;
                 SetBorder(2f, v, v, v, v);
+                return;
+            }
+
+            if (_searchHighlight)
+            {
+                // Toolbar-find match: a 2px amber ring (below selection +
+                // validation, above the resting look).
+                Color s = GraphTheme.Attention;
+                SetBorder(2f, s, s, s, s);
                 return;
             }
 

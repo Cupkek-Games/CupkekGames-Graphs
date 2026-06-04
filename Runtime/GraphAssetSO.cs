@@ -50,6 +50,14 @@ namespace CupkekGames.Graphs
         public virtual Data.Primitives.SerializedGuid StartNodeGuid => default;
 
         /// <summary>
+        /// When true, the editor paints a direction chevron at each edge's
+        /// midpoint (source → target). Default false — undirected / symmetric
+        /// graphs leave wires bare. Domain graphs whose edges carry direction
+        /// (containment, flow, transitions) override to true.
+        /// </summary>
+        public virtual bool DirectedEdges => false;
+
+        /// <summary>
         /// Hook for subclasses to react when a node is added to the graph
         /// (e.g. wire runtime state). Called by the editor after the subasset
         /// has been registered.
