@@ -244,7 +244,9 @@ namespace CupkekGames.Graphs.Editor
                         evt.StopPropagation();
                         return;
                     case KeyCode.F:
-                        ResetView();
+                        // Frame the selection if any nodes are selected, else fit all.
+                        if (Selection.Nodes.Count > 0) FrameSelection();
+                        else ResetView();
                         evt.StopPropagation();
                         return;
                 }

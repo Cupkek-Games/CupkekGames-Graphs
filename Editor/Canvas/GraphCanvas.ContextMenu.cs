@@ -86,6 +86,25 @@ namespace CupkekGames.Graphs.Editor
             if (ClipboardSerializer.HasPayload(EditorGUIUtility.systemCopyBuffer))
                 evt.menu.AppendAction("Paste   (Ctrl+V)", _ => Paste());
 
+            // Arrange — align (≥2 selected) / distribute (≥3) / frame.
+            int selCount = Selection.Nodes.Count;
+            if (selCount >= 2)
+            {
+                evt.menu.AppendSeparator();
+                evt.menu.AppendAction("Align/Left",     _ => AlignSelectedNodes(AlignEdge.Left));
+                evt.menu.AppendAction("Align/Center X",  _ => AlignSelectedNodes(AlignEdge.CenterX));
+                evt.menu.AppendAction("Align/Right",     _ => AlignSelectedNodes(AlignEdge.Right));
+                evt.menu.AppendAction("Align/Top",       _ => AlignSelectedNodes(AlignEdge.Top));
+                evt.menu.AppendAction("Align/Center Y",  _ => AlignSelectedNodes(AlignEdge.CenterY));
+                evt.menu.AppendAction("Align/Bottom",    _ => AlignSelectedNodes(AlignEdge.Bottom));
+                if (selCount >= 3)
+                {
+                    evt.menu.AppendAction("Distribute/Horizontally", _ => DistributeSelectedNodes(true));
+                    evt.menu.AppendAction("Distribute/Vertically",   _ => DistributeSelectedNodes(false));
+                }
+                evt.menu.AppendAction("Frame Selection   (F)", _ => FrameSelection());
+            }
+
             evt.menu.AppendSeparator();
             evt.menu.AppendAction("Delete   (Del)", _ => DeleteSelection(), Selection.IsEmpty ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
         }
