@@ -9,7 +9,7 @@ See `Documentation/GRAPHS_PACKAGE_DESIGN.md` (lives in `com.cupkekgames.luna` du
 
 ## Status
 
-- **v0.1.0** — Phase 1: runtime types + package skeleton. Editor canvas not yet implemented.
+- Runtime types **and** the full UI Toolkit canvas editor are implemented and shipping — pan/zoom, drag-to-connect (incl. drag-into-empty-space node creation), copy/paste, undo/redo, search, sticky notes, groups, validation, node collapse, `[NodeGroup]` field sections, and a play-mode runtime overlay. Consumed by `com.cupkekgames.behaviourtrees` and `com.cupkekgames.luna` navigation.
 
 ## Consumers (planned)
 

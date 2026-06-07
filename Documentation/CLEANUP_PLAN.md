@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-06-05) — historical.** This 2026-05-16 plan predates the nav rebuild + the Core split; several types it names (`LunaNavigationManager`, `LunaNavDestinationSO`, `LunaNavigationGraphSO`, `NavInstanceCache`, …) no longer exist. The graph editor + nav rebuild shipped — for current state see [Editor-UX-Roadmap.md](Editor-UX-Roadmap.md) and luna's `Documentation/NavGraph-Manual-Setup.md`.
+
 # Graphs / BT / Nav — Cleanup Plan
 
 Scope: `com.cupkekgames.graphs`, `com.cupkekgames.behaviourtrees`, and `com.cupkekgames.luna/Runtime/Scripts/Navigation`. Captured after a review pass on 2026-05-16.

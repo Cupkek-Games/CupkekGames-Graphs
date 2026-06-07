@@ -12,6 +12,7 @@ namespace CupkekGames.Graphs.Tests
     /// behaviour-trees, and AutoLayoutEngine now share. Builds in-memory graphs from
     /// a minimal concrete <see cref="GraphAssetSO"/> (no domain).
     /// </summary>
+    [Category("Graphs")]
     public class GraphTopologyTests
     {
         private sealed class TestGraph : GraphAssetSO
