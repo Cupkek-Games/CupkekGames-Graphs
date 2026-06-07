@@ -1,3 +1,4 @@
+using System;
 using CupkekGames.Data.Primitives;
 using UnityEditor;
 using UnityEngine;
@@ -91,11 +92,81 @@ namespace CupkekGames.Graphs.Editor
                     PortElement target = anchorPort.IsInput ? anchorPort : candidate;
                     CreateConnection(source, target);
                 }
+                else if (FindNodeElementAtPanel(panelPos) == null)
+                {
+                    // Released on EMPTY canvas (no compatible port within the
+                    // snap radius, not over a node) — the universal graph
+                    // gesture: open the node-search popup here and wire whatever
+                    // the user creates to the dragged port.
+                    OpenCreateConnectedNodePopup(anchorPort, panelPos);
+                }
             }
             finally
             {
                 CancelConnectionPreview();
             }
+        }
+
+        /// <summary>
+        /// Drag-to-create: a wire dropped on empty canvas opens the node-search
+        /// popup at the cursor; choosing a type spawns that node at the drop
+        /// point and connects it to <paramref name="anchorPort"/> (output anchor
+        /// → the new node's input; input anchor → its output). The ubiquitous
+        /// "pull a wire into space to make a connected node" gesture.
+        /// </summary>
+        void OpenCreateConnectedNodePopup(PortElement anchorPort, Vector2 panelPos)
+        {
+            if (Asset == null || anchorPort?.OwnerNode?.Node == null) return;
+
+            // Capture the drop point (canvas world) + the popup anchor (screen)
+            // now — the popup resolves after the preview is torn down. The
+            // anchor PortElement stays mounted on its node, so keep the ref.
+            Vector2 dropWorld = PanelToCanvasWorld(panelPos);
+            Vector2 screenPos = GUIUtility.GUIToScreenPoint(panelPos);
+            PortElement anchor = anchorPort;
+
+            NodeSearchPopup.Show(
+                screenPos,
+                Asset.NodeBaseType,
+                allowStickyNote: false, // a sticky note has no ports to wire
+                onSelected: type => CreateConnectedNode(type, anchor, dropWorld));
+        }
+
+        /// <summary>
+        /// Spawn <paramref name="nodeType"/> at <paramref name="dropWorld"/> and
+        /// wire it to <paramref name="anchor"/>: an output anchor connects to the
+        /// new node's first input (downstream); an input anchor connects to the
+        /// new node's first output (upstream). The node is still created if it
+        /// has no matching port — just left unconnected.
+        /// </summary>
+        void CreateConnectedNode(Type nodeType, PortElement anchor, Vector2 dropWorld)
+        {
+            if (Asset == null || nodeType == null || anchor?.OwnerNode?.Node == null) return;
+
+            // Spawn at the drop point, nudged up so the cursor sits near the
+            // node's port row rather than its top edge.
+            var node = CreateAndAddNode(nodeType, new Vector2(dropWorld.x, dropWorld.y - 18f));
+            if (node == null) return;
+            if (!_nodeElements.TryGetValue(node, out var ne) || ne == null) return;
+
+            // For an input anchor the new node is the SOURCE (its output wires
+            // back to the anchor), so put its RIGHT edge near the cursor.
+            if (anchor.IsInput)
+            {
+                node.Position = new Vector2(node.Position.x - node.PreferredWidth, node.Position.y);
+                ne.ApplyPosition();
+            }
+
+            // The drag seeks the OPPOSITE kind of port to the anchor.
+            PortElement newPort = anchor.IsInput
+                ? (ne.OutputPorts.Count > 0 ? ne.OutputPorts[0] : null)
+                : (ne.InputPorts.Count > 0 ? ne.InputPorts[0] : null);
+            if (newPort == null) return; // created, nothing to wire to
+
+            PortElement source = anchor.IsInput ? newPort : anchor;
+            PortElement target = anchor.IsInput ? anchor : newPort;
+            if (CanConnect(source, target))
+                CreateConnection(source, target);
         }
 
         public void CancelConnectionPreview()
