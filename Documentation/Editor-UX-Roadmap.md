@@ -35,14 +35,14 @@ Design docs: [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md) · [NavGraph
 | Item | Verdict | Why |
 |---|---|---|
 | **3B port labels** | **dropped** (tried) | Always-visible "parent"/"children" labels added then removed on review — unwanted clutter. `GraphPortDef.Label` stays an unused field. |
-| **Nav-forest dedups** (`NavTopology` Pass 2, `LunaLayerHost.OrderedForSpawn`) | **declined** | Close reading: Pass 2 needs multi-parent *validation* + the raw `OrderIndex` int (`Adjacency` exposes neither); `OrderedForSpawn` is coupled to `NavTopology.Entry` and **boot-critical** with ~zero code savings. `GraphTopology.PreOrder`/`ParentOf` exist if a future *tested* refactor wants them. |
+| **Nav-forest dedups** (`NavTopology` Pass 2, `NavHost.OrderedForSpawn`) | **declined** | Close reading: Pass 2 needs multi-parent *validation* + the raw `OrderIndex` int (`Adjacency` exposes neither); `OrderedForSpawn` is coupled to `NavTopology.Entry` and **boot-critical** with ~zero code savings. `GraphTopology.PreOrder`/`ParentOf` exist if a future *tested* refactor wants them. |
 | **3A sub-graph breadcrumbs** | **deferred** | Pure editor code, but only meaningful once sub-graphs are actually authored/used. Build when nesting is real. |
 | **Separate "global destination" type / definition asset** | **rejected (design)** | "Global" = a normal NavGraph on a persistent (`_persistAcrossScenes`) host; opening = `Push(id)`, not containment — Settings is a global *root*, never duplicated. No special type. |
 | **Sub-graph composition** (cross-graph references) | **separate non-goal** | The shared-global case is solved by the topology *merge* + one persistent host. Sub-graph references are for *composing reusable sub-flows* (distinct instances) — a different feature, unbuilt. |
 | **Cross-graph containment edges** | **unsupported (design)** | Global destinations are roots; per-graph `IsTab`/`ChannelId` stay valid under the union. Not needed. |
 | **Runtime overlay polling** | **rejected** | Event-driven (push) instead, with opt-in `IGraphRuntimePollable` only for continuous sources (BT). No idle work. |
 | **"Decorate-on-structure-change" base hook** | **candidate, not built** | `NavGraphCanvas` subscribes `GraphChanged` → `DecorateFromTopology`. Could be a base hook — but each domain subscribing the event is fine; build only when a 2nd domain wants structural decoration. |
-| **Generalize `ChannelTint` / `IsTab`-`ChannelId` derivation / `LunaLayerHost` spawn** | **kept domain-local (audited)** | The genericness audit confirmed these are correctly nav-specific — do NOT generalize. |
+| **Generalize `ChannelTint` / `IsTab`-`ChannelId` derivation / `NavHost` spawn** | **kept domain-local (audited)** | The genericness audit confirmed these are correctly nav-specific — do NOT generalize. |
 
 ### Verification still owed (user-side, no code)
 Play-mode visual checks: nav overlay (destinations glow on `Push`/`Pop`) and BT overlay (running/ok/fail + the instance dropdown with >1 agent).
