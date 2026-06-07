@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -8,9 +10,10 @@ namespace CupkekGames.Graphs.Editor
 {
     /// <summary>
     /// Card-style visual representation of a single <see cref="GraphNodeSO"/>
-    /// on the canvas. Header strip with title + optional subtitle, plus a
-    /// body strip containing the input and output port stubs (one of each
-    /// for now — multi-port support lands in a later piece).
+    /// on the canvas. Header strip with title + optional subtitle, an inline
+    /// body of the node's serialized fields (grouped into [NodeGroup] sections),
+    /// and the input/output port stubs along the card edges (multi-port: one
+    /// stub per declared GraphPortDef).
     ///
     /// Position is bound to the underlying node SO — drag the element and
     /// the SO's <see cref="GraphNodeSO.Position"/> follows.
@@ -63,6 +66,7 @@ namespace CupkekGames.Graphs.Editor
         // replace the inherited chrome with their own visual layout.
         protected readonly VisualElement _accentBar;
         protected readonly VisualElement _header;
+        protected readonly Label _caret;
         protected readonly Label _iconLabel;
         protected readonly Label _titleLabel;
         protected readonly VisualElement _badgeRow;
@@ -200,6 +204,33 @@ namespace CupkekGames.Graphs.Editor
             _header.pickingMode = PickingMode.Ignore;
             Add(_header);
 
+            // Collapse caret in the header's leading slot (▾ expanded / ▸
+            // collapsed). Clicking it folds the card down to its header strip
+            // (body + subtitle hidden; ports + badges stay so edges read). It's
+            // pickable and stops propagation so the click neither starts a node
+            // drag (NodeDragManipulator) nor triggers the header double-click
+            // rename. Hidden by UpdateCaret() for nodes with no inline body to
+            // fold (e.g. sticky notes).
+            _caret = new Label("▼");
+            _caret.AddToClassList("cgg-graph-node__caret");
+            // Filled triangle, near-white, sized to the title — the small thin
+            // ▾ at subtitle-grey was hard to see against the header tint.
+            _caret.style.color = new Color(0.88f, 0.90f, 0.95f);
+            _caret.style.fontSize = 8;
+            _caret.style.marginRight = 6f;
+            _caret.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _caret.style.display = DisplayStyle.None;
+            _caret.pickingMode = PickingMode.Position;
+            _caret.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0) return;
+                ToggleCollapsed();
+                evt.StopPropagation();
+            });
+            // Shield the legacy double-click rename path too (separate event).
+            _caret.RegisterCallback<MouseDownEvent>(evt => evt.StopPropagation());
+            _header.Add(_caret);
+
             // Optional glyph in front of the title — driven by
             // GraphNodeSO.IconGlyph (default null hides the slot). Domain
             // nodes can return a Material-icon code or a single character
@@ -277,6 +308,8 @@ namespace CupkekGames.Graphs.Editor
             RebuildPorts();
             RefreshDisplay();
             ApplyPosition();
+            UpdateCaret();          // show the caret only if there's a body to fold
+            ApplyCollapsedState();  // honor sidecar-restored Collapsed on first build
 
             this.AddManipulator(new NodeDragManipulator());
 
@@ -336,13 +369,62 @@ namespace CupkekGames.Graphs.Editor
         protected virtual void BuildBody(VisualElement container)
         {
             var so = new SerializedObject(_node);
+
+            // Walk the visible serialized fields in Unity's canonical order
+            // (= serialization / declaration order). For each, read the optional
+            // [NodeGroup] / [NodeFieldOrder] off its FieldInfo and keep the live
+            // SerializedProperty by name. The pure NodeFieldLayout resolver
+            // (Editor-free, unit-tested) decides section + field order; with no
+            // [NodeGroup] anywhere it returns one untitled section = the plain
+            // flat list, so non-annotated nodes render exactly as before.
+            var fields = new List<NodeFieldLayout.Field>();
+            var byName = new Dictionary<string, SerializedProperty>();
             var iter = so.GetIterator();
             iter.NextVisible(enterChildren: true); // skip m_Script
+            int seen = 0;
             while (iter.NextVisible(enterChildren: false))
             {
-                var field = new PropertyField(iter.Copy());
-                field.Bind(so);
-                container.Add(field);
+                string group = null;
+                int groupOrder = 0;
+                int fieldOrder = seen;
+                var fi = FindFieldInfo(_node.GetType(), iter.name);
+                if (fi != null)
+                {
+                    var g = fi.GetCustomAttribute<NodeGroupAttribute>();
+                    if (g != null) { group = g.Title; groupOrder = g.Order; }
+                    var o = fi.GetCustomAttribute<NodeFieldOrderAttribute>();
+                    if (o != null) fieldOrder = o.Order;
+                }
+                fields.Add(new NodeFieldLayout.Field(iter.name, group, groupOrder, fieldOrder, seen));
+                byName[iter.name] = iter.Copy();
+                seen++;
+            }
+
+            foreach (var section in NodeFieldLayout.Resolve(fields))
+            {
+                // Untitled section (ungrouped fields) renders flat in the body;
+                // a titled section renders as a collapsible Foldout.
+                VisualElement target = container;
+                if (section.Title != null)
+                {
+                    var foldout = new Foldout { text = section.Title, value = true };
+                    foldout.AddToClassList("cgg-graph-node__field-group");
+                    foldout.style.marginTop = 2f;
+                    // Bold the section title. Query before fields are added so
+                    // the only Label in the subtree is the foldout's header.
+                    var labelEl = foldout.Q<Label>();
+                    if (labelEl != null) labelEl.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    container.Add(foldout);
+                    target = foldout;
+                }
+
+                foreach (var name in section.FieldNames)
+                {
+                    if (!byName.TryGetValue(name, out var prop)) continue;
+                    var field = new PropertyField(prop);
+                    field.Bind(so);
+                    target.Add(field);
+                }
             }
 
             // Inline edits dirty the bound asset — refresh this card's
@@ -353,6 +435,21 @@ namespace CupkekGames.Graphs.Editor
                 RefreshDisplay();
                 _canvas?.NotifyGraphChanged();
             });
+        }
+
+        // Resolve the FieldInfo for a serialized property name, walking the
+        // node type's inheritance chain (private [SerializeField] fields aren't
+        // found by a single GetField without DeclaredOnly per level).
+        static FieldInfo FindFieldInfo(Type type, string name)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public |
+                                       BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            for (Type t = type; t != null && t != typeof(UnityEngine.Object); t = t.BaseType)
+            {
+                var fi = t.GetField(name, flags);
+                if (fi != null) return fi;
+            }
+            return null;
         }
 
         // ---------------------------------------------------------------
@@ -405,7 +502,11 @@ namespace CupkekGames.Graphs.Editor
             }
 
             string subtitle = _node.DisplaySubtitle;
-            if (string.IsNullOrEmpty(subtitle))
+            // Also hidden while collapsed (card folded to its header) — keeping
+            // the rule here means every RefreshDisplay caller (incl.
+            // SetIsStartNode) stays consistent with the collapsed state without
+            // each having to re-apply it.
+            if (string.IsNullOrEmpty(subtitle) || _node.Collapsed)
             {
                 _subtitleLabel.style.display = DisplayStyle.None;
             }
@@ -416,6 +517,64 @@ namespace CupkekGames.Graphs.Editor
             }
 
             RebuildBadges();
+        }
+
+        // ---------------------------------------------------------------
+        // Collapse (fold body to the header strip; sidecar-persisted)
+        // ---------------------------------------------------------------
+
+        // True when the node has an inline body worth folding — the SINGLE
+        // source of truth shared by the caret's visibility and the collapse
+        // commands, so the per-node caret and the bulk Collapse menu always
+        // agree on what can fold (a bodyless node is never put into a collapsed
+        // state it has no on-card affordance to leave).
+        bool IsCollapsible => _node != null && _node.ShowInlineProperties
+                              && _body != null && _body.childCount > 0;
+
+        // Flip this node's collapsed state from the header caret.
+        void ToggleCollapsed()
+        {
+            if (!IsCollapsible) return;
+            SetCollapsed(!_node.Collapsed);
+        }
+
+        /// <summary>
+        /// Collapse or expand this node. Hides the body, keeps the header +
+        /// badges + ports (so edges stay glued). Persists like a move: flips the
+        /// window "*" via <c>NotifyGraphChanged</c> so the next save writes the
+        /// flag to the layout sidecar. Pass <paramref name="notify"/> false for
+        /// bulk ops that fire one notify at the end. Returns true only when the
+        /// state actually changed, so bulk callers can skip a no-op dirty.
+        /// </summary>
+        internal bool SetCollapsed(bool collapsed, bool notify = true)
+        {
+            if (!IsCollapsible) return false;        // nothing to fold
+            if (_node.Collapsed == collapsed) return false;
+            _node.Collapsed = collapsed;
+            RefreshDisplay();       // re-evaluates subtitle for the new state
+            ApplyCollapsedState();
+            _canvas?.RefreshEdgesForNode(_node); // height changed -> ports moved
+            if (notify) _canvas?.NotifyGraphChanged();
+            return true;
+        }
+
+        // Apply the current Collapsed flag to the card: body hidden when
+        // collapsed; caret glyph reflects the state. (The subtitle is governed
+        // by RefreshDisplay, which every caller runs first.)
+        void ApplyCollapsedState()
+        {
+            bool collapsed = _node != null && _node.Collapsed;
+            if (_body != null)
+                _body.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
+            if (_caret != null)
+                _caret.text = collapsed ? "▶" : "▼";
+        }
+
+        // Show the caret only when there's an inline body worth folding.
+        void UpdateCaret()
+        {
+            if (_caret == null) return;
+            _caret.style.display = IsCollapsible ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         // ---------------------------------------------------------------

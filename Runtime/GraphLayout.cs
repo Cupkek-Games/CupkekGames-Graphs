@@ -20,6 +20,11 @@ namespace CupkekGames.Graphs
         [SerializeField] private List<string> _guids = new List<string>();
         [SerializeField] private List<Vector2> _positions = new List<Vector2>();
 
+        // Sparse — holds ONLY the guids of collapsed nodes (absence = expanded,
+        // the common case). Kept separate from the positions lists so the YAML
+        // stays one line per collapsed node and the diff is isolated.
+        [SerializeField] private List<string> _collapsedGuids = new List<string>();
+
         /// <summary>Read the stored position for <paramref name="guid"/>, if any.</summary>
         public bool TryGet(string guid, out Vector2 position)
         {
@@ -45,6 +50,17 @@ namespace CupkekGames.Graphs
             }
         }
 
+        /// <summary>True when <paramref name="guid"/> is marked collapsed.</summary>
+        public bool IsCollapsed(string guid) => _collapsedGuids.Contains(guid);
+
+        /// <summary>Set (or clear) the collapsed flag for <paramref name="guid"/>.</summary>
+        public void SetCollapsed(string guid, bool collapsed)
+        {
+            bool has = _collapsedGuids.Contains(guid);
+            if (collapsed && !has) _collapsedGuids.Add(guid);
+            else if (!collapsed && has) _collapsedGuids.Remove(guid);
+        }
+
         /// <summary>Drop entries whose guid is not in <paramref name="keep"/> (deleted nodes).</summary>
         public void PruneExcept(ICollection<string> keep)
         {
@@ -55,6 +71,11 @@ namespace CupkekGames.Graphs
                     _guids.RemoveAt(i);
                     _positions.RemoveAt(i);
                 }
+            }
+            for (int i = _collapsedGuids.Count - 1; i >= 0; i--)
+            {
+                if (!keep.Contains(_collapsedGuids[i]))
+                    _collapsedGuids.RemoveAt(i);
             }
         }
     }

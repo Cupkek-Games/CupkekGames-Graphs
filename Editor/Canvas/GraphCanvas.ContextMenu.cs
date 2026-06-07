@@ -105,8 +105,35 @@ namespace CupkekGames.Graphs.Editor
                 evt.menu.AppendAction("Frame Selection   (F)", _ => FrameSelection());
             }
 
+            // Collapse — fold the body to the header strip (per-node caret does
+            // one; these do the selection / whole graph). Sidecar-persisted.
+            evt.menu.AppendSeparator();
+            var collapseStatus = Selection.IsEmpty ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal;
+            evt.menu.AppendAction("Collapse/Collapse Selected", _ => SetCollapsedForSelection(true), collapseStatus);
+            evt.menu.AppendAction("Collapse/Expand Selected", _ => SetCollapsedForSelection(false), collapseStatus);
+            evt.menu.AppendAction("Collapse/Collapse All", _ => SetCollapsedForAll(true));
+            evt.menu.AppendAction("Collapse/Expand All", _ => SetCollapsedForAll(false));
+
             evt.menu.AppendSeparator();
             evt.menu.AppendAction("Delete   (Del)", _ => DeleteSelection(), Selection.IsEmpty ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
+        }
+
+        /// <summary>Collapse/expand every selected node; one dirty flip, only if any changed.</summary>
+        void SetCollapsedForSelection(bool collapsed)
+        {
+            bool any = false;
+            foreach (var ne in Selection.Nodes)
+                any |= ne.SetCollapsed(collapsed, notify: false);
+            if (any) NotifyGraphChanged();
+        }
+
+        /// <summary>Collapse/expand every node in the graph; one dirty flip, only if any changed.</summary>
+        void SetCollapsedForAll(bool collapsed)
+        {
+            bool any = false;
+            foreach (var ne in NodeElements)
+                any |= ne.SetCollapsed(collapsed, notify: false);
+            if (any) NotifyGraphChanged();
         }
 
         /// <summary>
@@ -257,9 +284,9 @@ namespace CupkekGames.Graphs.Editor
             RaiseGraphChanged();
         }
 
-        void CreateAndAddNode(Type nodeType, Vector2 worldPos)
+        GraphNodeSO CreateAndAddNode(Type nodeType, Vector2 worldPos)
         {
-            if (Asset == null || nodeType == null) return;
+            if (Asset == null || nodeType == null) return null;
 
             var node = (GraphNodeSO)ScriptableObject.CreateInstance(nodeType);
             node.name = nodeType.Name;
@@ -280,6 +307,7 @@ namespace CupkekGames.Graphs.Editor
 
             AddNodeElement(node);
             RaiseGraphChanged();
+            return node;
         }
     }
 }

@@ -421,8 +421,10 @@ namespace CupkekGames.Graphs.Editor
 
             foreach (var n in working.Nodes)
             {
-                if (n != null && layout.TryGet(n.Guid.ValueStr, out var pos))
+                if (n == null) continue;
+                if (layout.TryGet(n.Guid.ValueStr, out var pos))
                     n.Position = pos;
+                n.Collapsed = layout.IsCollapsed(n.Guid.ValueStr);
             }
         }
 
@@ -446,6 +448,7 @@ namespace CupkekGames.Graphs.Editor
                 if (n == null) continue;
                 string g = n.Guid.ValueStr;
                 layout.Set(g, n.Position);
+                layout.SetCollapsed(g, n.Collapsed);
                 live.Add(g);
             }
             layout.PruneExcept(live);

@@ -23,6 +23,15 @@ namespace CupkekGames.Graphs
         // Auto Layout once to seed a sidecar.)
         [System.NonSerialized] public Vector2 Position;
 
+        /// <summary>
+        /// Editor-only: whether this node is collapsed on the canvas (body +
+        /// subtitle hidden, header + badges + ports kept so edges stay glued).
+        /// Like <see cref="Position"/>, it is NOT serialized into the graph
+        /// asset — it lives in the <c>GraphLayout</c> sidecar keyed by Guid, so
+        /// display churn stays out of the structural asset.
+        /// </summary>
+        [System.NonSerialized] public bool Collapsed;
+
         /// <summary>Title rendered in the node header. Defaults to the type name.</summary>
         public virtual string DisplayTitle => GetType().Name;
 
@@ -72,11 +81,12 @@ namespace CupkekGames.Graphs
 
         /// <summary>
         /// When true (default), <c>NodeElement</c> renders the node's
-        /// serialized fields directly inside the card body via UI Toolkit's
-        /// <c>InspectorElement</c>. Set to false for nodes whose visual body
-        /// is owned by a custom <c>NodeElement</c> subclass (e.g. sticky
-        /// notes) — the inline auto-inspector would collide with their
-        /// hand-built layout.
+        /// serialized fields directly inside the card body as
+        /// <c>PropertyField</c>s — flat, or grouped into collapsible
+        /// <c>Foldout</c> sections when the fields carry <c>[NodeGroup]</c>.
+        /// Set to false for nodes whose visual body is owned by a custom
+        /// <c>NodeElement</c> subclass (e.g. sticky notes) — the inline
+        /// auto-inspector would collide with their hand-built layout.
         /// </summary>
         public virtual bool ShowInlineProperties => true;
 
