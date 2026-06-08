@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -20,12 +19,20 @@ namespace CupkekGames.Graphs.Editor
     /// </summary>
     public class NodeElement : VisualElement
     {
-        const float HeaderHeight = 28f;
-        const float PortRowMinHeight = 28f;
-        // Corner radius 8 so the header + body read as one rounded card.
-        const float CornerRadius = 8f;
-        // 3px type-colored strip across the header top (GraphNodeSO.HeaderColor).
-        const float AccentBarHeight = 3f;
+        const float HeaderHeight = 24f;
+        const float PortRowMinHeight = 20f;
+        // Corner radius so the header + body read as one rounded card.
+        const float CornerRadius = 6f;
+        // Width of the type-colored accent stripe down the card's left edge.
+        const float AccentStripeWidth = 6f;
+        // Ports sit fully INSIDE the card (not straddling the border): the
+        // circle's outer rim is tangent to the card's inner edge, with a 2px
+        // hair of clearance so the selection ring doesn't cover the rim — the
+        // port still reads as "touching the edge" when the node is selected.
+        // Input clears the left accent stripe; output hugs the right edge.
+        const float PortEdgeClearance = 2f;
+        const float PortInsetInput = AccentStripeWidth + PortEdgeClearance;
+        const float PortInsetOutput = PortEdgeClearance;
         // 4px base spacing unit — header/body/subtitle paddings are multiples.
         const float Pad = 4f;
 
@@ -155,16 +162,16 @@ namespace CupkekGames.Graphs.Editor
 
             AddToClassList(ClassNode);
             style.position = Position.Absolute;
-            style.minWidth = node != null ? node.PreferredWidth : 240f;
+            style.minWidth = node != null ? node.PreferredWidth : 180f;
             style.backgroundColor = BackgroundColor;
             style.overflow = Overflow.Visible;
 
             UpdateBorder();
 
-            // 3px type-colored accent bar across the very top of the card,
-            // fed from GraphNodeSO.HeaderColor (or StartAccent for the start
-            // node). Sits above the header strip and reads as the card's
-            // type tag. Top corners rounded to match the card radius.
+            // Type-colored accent stripe down the card's LEFT edge (fed from
+            // GraphNodeSO.HeaderColor / accent tint, or StartAccent for the
+            // start node) — reads as the card's type tag. Absolute-positioned,
+            // full height, left corners rounded to match the card radius.
             //
             // Hidden until RefreshDisplay() turns it on. Subclasses that own
             // their layout and skip base.RefreshDisplay() (e.g.
@@ -173,9 +180,13 @@ namespace CupkekGames.Graphs.Editor
             // type needing to know about the subclass.
             _accentBar = new VisualElement();
             _accentBar.AddToClassList("cgg-graph-node__accent-bar");
-            _accentBar.style.height = AccentBarHeight;
+            _accentBar.style.position = Position.Absolute;
+            _accentBar.style.left = 0f;
+            _accentBar.style.top = 0f;
+            _accentBar.style.bottom = 0f;
+            _accentBar.style.width = AccentStripeWidth;
             _accentBar.style.borderTopLeftRadius = CornerRadius;
-            _accentBar.style.borderTopRightRadius = CornerRadius;
+            _accentBar.style.borderBottomLeftRadius = CornerRadius;
             _accentBar.style.display = DisplayStyle.None;
             _accentBar.pickingMode = PickingMode.Ignore;
             Add(_accentBar);
@@ -188,8 +199,8 @@ namespace CupkekGames.Graphs.Editor
             _header.style.paddingRight = 2f * Pad;  // 8px
             // ~6px vertical pad (per the 4px rhythm token) instead of a fixed
             // header height, so the strip hugs the title; accent bar adds 3px.
-            _header.style.paddingTop = Pad + 2f;     // 6px
-            _header.style.paddingBottom = Pad + 2f;  // 6px
+            _header.style.paddingTop = Pad;          // 4px
+            _header.style.paddingBottom = Pad;       // 4px
             // Squared bottom corners so header + body read as one piece. Top
             // corners are squared too — the dedicated _accentBar above owns the
             // rounded top of the card. Zero the header's own borders inline so
@@ -238,7 +249,7 @@ namespace CupkekGames.Graphs.Editor
             _iconLabel = new Label();
             _iconLabel.AddToClassList("cgg-graph-node__icon");
             _iconLabel.style.color = Color.white;
-            _iconLabel.style.fontSize = 13;
+            _iconLabel.style.fontSize = 11;
             _iconLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             _iconLabel.style.marginRight = 6f;
             _iconLabel.style.display = DisplayStyle.None;
@@ -248,7 +259,7 @@ namespace CupkekGames.Graphs.Editor
             _titleLabel = new Label();
             _titleLabel.AddToClassList("cgg-graph-node__title");
             _titleLabel.style.color = Color.white;
-            _titleLabel.style.fontSize = 13;
+            _titleLabel.style.fontSize = 11;
             _titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             _titleLabel.pickingMode = PickingMode.Ignore;
             _header.Add(_titleLabel);
@@ -277,11 +288,11 @@ namespace CupkekGames.Graphs.Editor
             _subtitleLabel = new Label();
             _subtitleLabel.AddToClassList("cgg-graph-node__subtitle");
             _subtitleLabel.style.color = SubtitleColor;
-            _subtitleLabel.style.fontSize = 10;
+            _subtitleLabel.style.fontSize = 9;
             _subtitleLabel.style.paddingLeft = 2f * Pad;   // 8px
             _subtitleLabel.style.paddingRight = 2f * Pad;  // 8px
-            _subtitleLabel.style.paddingTop = Pad;         // 4px
-            _subtitleLabel.style.paddingBottom = Pad;      // 4px
+            _subtitleLabel.style.paddingTop = 2f;          // tight under the header
+            _subtitleLabel.style.paddingBottom = 2f;
             _subtitleLabel.pickingMode = PickingMode.Ignore;
             Add(_subtitleLabel);
 
@@ -302,7 +313,9 @@ namespace CupkekGames.Graphs.Editor
             _body.style.paddingTop = Pad;         // 4px
             _body.style.paddingBottom = 2f * Pad; // 8px
             Add(_body);
-            if (_node != null && _node.ShowInlineProperties)
+            // Skip the on-card body when the canvas defers editing to the docked
+            // inspector panel (InlineBodyEnabled == false) — keeps cards compact.
+            if (_node != null && _node.ShowInlineProperties && (_canvas?.InlineBodyEnabled ?? true))
                 BuildBody(_body);
 
             RebuildPorts();
@@ -311,7 +324,10 @@ namespace CupkekGames.Graphs.Editor
             UpdateCaret();          // show the caret only if there's a body to fold
             ApplyCollapsedState();  // honor sidecar-restored Collapsed on first build
 
-            this.AddManipulator(new NodeDragManipulator());
+            // A read-only canvas (the runtime debugger) skips the drag manipulator
+            // so the bound live asset's node positions can't be moved.
+            if (!(_canvas?.ReadOnly ?? false))
+                this.AddManipulator(new NodeDragManipulator());
 
             // Double-click handling. Uses MouseDownEvent (not ClickEvent) to
             // match GroupElement's title double-click: the attached
@@ -324,7 +340,8 @@ namespace CupkekGames.Graphs.Editor
             {
                 if (evt.button != 0 || evt.clickCount != 2) return; // double-click only
 
-                if (_node != null && _node.CanRename && IsWithinHeader(evt.localMousePosition))
+                if (_node != null && _node.CanRename && !(_canvas?.ReadOnly ?? false)
+                    && IsWithinHeader(evt.localMousePosition))
                 {
                     BeginInlineRename();
                     evt.StopPropagation();
@@ -368,88 +385,15 @@ namespace CupkekGames.Graphs.Editor
         /// </summary>
         protected virtual void BuildBody(VisualElement container)
         {
-            var so = new SerializedObject(_node);
-
-            // Walk the visible serialized fields in Unity's canonical order
-            // (= serialization / declaration order). For each, read the optional
-            // [NodeGroup] / [NodeFieldOrder] off its FieldInfo and keep the live
-            // SerializedProperty by name. The pure NodeFieldLayout resolver
-            // (Editor-free, unit-tested) decides section + field order; with no
-            // [NodeGroup] anywhere it returns one untitled section = the plain
-            // flat list, so non-annotated nodes render exactly as before.
-            var fields = new List<NodeFieldLayout.Field>();
-            var byName = new Dictionary<string, SerializedProperty>();
-            var iter = so.GetIterator();
-            iter.NextVisible(enterChildren: true); // skip m_Script
-            int seen = 0;
-            while (iter.NextVisible(enterChildren: false))
-            {
-                string group = null;
-                int groupOrder = 0;
-                int fieldOrder = seen;
-                var fi = FindFieldInfo(_node.GetType(), iter.name);
-                if (fi != null)
-                {
-                    var g = fi.GetCustomAttribute<NodeGroupAttribute>();
-                    if (g != null) { group = g.Title; groupOrder = g.Order; }
-                    var o = fi.GetCustomAttribute<NodeFieldOrderAttribute>();
-                    if (o != null) fieldOrder = o.Order;
-                }
-                fields.Add(new NodeFieldLayout.Field(iter.name, group, groupOrder, fieldOrder, seen));
-                byName[iter.name] = iter.Copy();
-                seen++;
-            }
-
-            foreach (var section in NodeFieldLayout.Resolve(fields))
-            {
-                // Untitled section (ungrouped fields) renders flat in the body;
-                // a titled section renders as a collapsible Foldout.
-                VisualElement target = container;
-                if (section.Title != null)
-                {
-                    var foldout = new Foldout { text = section.Title, value = true };
-                    foldout.AddToClassList("cgg-graph-node__field-group");
-                    foldout.style.marginTop = 2f;
-                    // Bold the section title. Query before fields are added so
-                    // the only Label in the subtree is the foldout's header.
-                    var labelEl = foldout.Q<Label>();
-                    if (labelEl != null) labelEl.style.unityFontStyleAndWeight = FontStyle.Bold;
-                    container.Add(foldout);
-                    target = foldout;
-                }
-
-                foreach (var name in section.FieldNames)
-                {
-                    if (!byName.TryGetValue(name, out var prop)) continue;
-                    var field = new PropertyField(prop);
-                    field.Bind(so);
-                    target.Add(field);
-                }
-            }
-
-            // Inline edits dirty the bound asset — refresh this card's
-            // header (title / subtitle / badges may derive from the edited
-            // field) and notify the canvas so the window's "*" flips.
-            container.TrackSerializedObjectValue(so, _ =>
+            // Delegate to the shared builder (the docked inspector panel uses it
+            // too). On any inline edit, refresh this card's header (title /
+            // subtitle / badges may derive from the changed field) and flip the
+            // window "*".
+            NodeInspectorBody.Build(_node, container, () =>
             {
                 RefreshDisplay();
                 _canvas?.NotifyGraphChanged();
             });
-        }
-
-        // Resolve the FieldInfo for a serialized property name, walking the
-        // node type's inheritance chain (private [SerializeField] fields aren't
-        // found by a single GetField without DeclaredOnly per level).
-        static FieldInfo FindFieldInfo(Type type, string name)
-        {
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public |
-                                       BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
-            for (Type t = type; t != null && t != typeof(UnityEngine.Object); t = t.BaseType)
-            {
-                var fi = t.GetField(name, flags);
-                if (fi != null) return fi;
-            }
-            return null;
         }
 
         // ---------------------------------------------------------------
@@ -473,13 +417,13 @@ namespace CupkekGames.Graphs.Editor
             // node can also show the selection ring; see UpdateBorder.
             string title = _node.DisplayTitle ?? string.Empty;
             _titleLabel.text = IsStartNode ? "★ " + title : title;
-            _header.style.backgroundColor = IsStartNode
-                ? GraphTheme.StartAccent
-                : _node.HeaderColor;
+            // The header is neutral now — the left accent stripe carries the
+            // type color. (A start node still reads via the green stripe + ★.)
+            _header.style.backgroundColor = Color.clear;
 
-            // 3px type-colored accent bar: node's HeaderColor normally, green
-            // StartAccent for the start node (its persistent, selection-proof
-            // cue). Shown here (constructor leaves it hidden) so subclasses
+            // Left accent stripe: node's HeaderColor / accent tint normally,
+            // green StartAccent for the start node (its persistent, selection-
+            // proof cue). Shown here (constructor leaves it hidden) so subclasses
             // that skip base.RefreshDisplay() keep it off.
             if (_accentBar != null)
             {
@@ -565,7 +509,11 @@ namespace CupkekGames.Graphs.Editor
         {
             bool collapsed = _node != null && _node.Collapsed;
             if (_body != null)
-                _body.style.display = collapsed ? DisplayStyle.None : DisplayStyle.Flex;
+                // Hidden when collapsed OR when there are no inline fields (the
+                // canvas defers editing to the docked inspector panel) — so a
+                // compact card doesn't reserve an empty body strip.
+                _body.style.display = (collapsed || _body.childCount == 0)
+                    ? DisplayStyle.None : DisplayStyle.Flex;
             if (_caret != null)
                 _caret.text = collapsed ? "▶" : "▼";
         }
@@ -636,7 +584,7 @@ namespace CupkekGames.Graphs.Editor
             {
                 style =
                 {
-                    fontSize = 9,
+                    fontSize = 8,
                     unityFontStyleAndWeight = FontStyle.Bold,
                     color = Color.white,
                     backgroundColor = tint,
@@ -716,7 +664,18 @@ namespace CupkekGames.Graphs.Editor
             if (!_runtimeState.HasValue && !state.HasValue) return; // stays clear — skip
             _runtimeState = state;
             UpdateBorder();
+            UpdateRuntimeFill();
             RebuildBadges();
+        }
+
+        // Tint the card body with the runtime Fill (e.g. the active/visible node),
+        // restoring the normal surface when there's no fill. Background is otherwise
+        // untouched by selection/hover, so this is the single owner of the card's
+        // runtime tint.
+        void UpdateRuntimeFill()
+        {
+            Color? fill = _runtimeState?.Fill;
+            style.backgroundColor = fill ?? BackgroundColor;
         }
 
         // True when a card-local point lands in the header strip (the rename
@@ -883,13 +842,13 @@ namespace CupkekGames.Graphs.Editor
             for (int i = 0; i < _inputPorts.Count; i++)
             {
                 var p = _inputPorts[i];
-                p.style.left = -PortElement.PortSize * 0.5f;
+                p.style.left = PortInsetInput;
                 p.style.top = centerY + (i - (_inputPorts.Count - 1) * 0.5f) * (PortElement.PortSize + 6f);
             }
             for (int i = 0; i < _outputPorts.Count; i++)
             {
                 var p = _outputPorts[i];
-                p.style.right = -PortElement.PortSize * 0.5f;
+                p.style.right = PortInsetOutput;
                 p.style.top = centerY + (i - (_outputPorts.Count - 1) * 0.5f) * (PortElement.PortSize + 6f);
             }
         }
@@ -936,9 +895,11 @@ namespace CupkekGames.Graphs.Editor
             // snapping to x=0 on spawn).
             float width = layout.width;
             if (float.IsNaN(width) || width <= 0f)
-                width = _node != null ? _node.PreferredWidth : 240f;
+                width = _node != null ? _node.PreferredWidth : 180f;
 
-            float portX = isInput ? -PortElement.PortSize * 0.5f : width + PortElement.PortSize * 0.5f;
+            float portX = isInput
+                ? PortInsetInput + PortElement.PortSize * 0.5f
+                : width - PortInsetOutput - PortElement.PortSize * 0.5f;
             return _node.Position + new Vector2(portX, portY);
         }
 

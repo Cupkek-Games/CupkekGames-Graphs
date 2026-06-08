@@ -20,6 +20,14 @@ namespace CupkekGames.Graphs.Editor
         {
             if (Asset == null) return;
 
+            // Read-only viewer (e.g. the Graph Runtime Debugger): only view actions,
+            // never anything that mutates the bound asset.
+            if (ReadOnly)
+            {
+                evt.menu.AppendAction("Fit View   (F)", _ => FrameAll());
+                return;
+            }
+
             // Remember the cursor for the popup; mousePosition is panel-space.
             Vector2 panelPos = evt.mousePosition;
             Vector2 worldPos = ScreenToWorld(this.WorldToLocal(panelPos));
@@ -57,7 +65,7 @@ namespace CupkekGames.Graphs.Editor
 
             evt.menu.AppendSeparator();
             evt.menu.AppendAction("Auto Layout", _ => AutoLayout());
-            evt.menu.AppendAction("Fit View   (F)", _ => ResetView());
+            evt.menu.AppendAction("Fit View   (F)", _ => FrameAll());
         }
 
         /// <summary>
@@ -105,35 +113,12 @@ namespace CupkekGames.Graphs.Editor
                 evt.menu.AppendAction("Frame Selection   (F)", _ => FrameSelection());
             }
 
-            // Collapse — fold the body to the header strip (per-node caret does
-            // one; these do the selection / whole graph). Sidecar-persisted.
             evt.menu.AppendSeparator();
-            var collapseStatus = Selection.IsEmpty ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal;
-            evt.menu.AppendAction("Collapse/Collapse Selected", _ => SetCollapsedForSelection(true), collapseStatus);
-            evt.menu.AppendAction("Collapse/Expand Selected", _ => SetCollapsedForSelection(false), collapseStatus);
-            evt.menu.AppendAction("Collapse/Collapse All", _ => SetCollapsedForAll(true));
-            evt.menu.AppendAction("Collapse/Expand All", _ => SetCollapsedForAll(false));
+            evt.menu.AppendAction("Group Selection", _ => CreateGroupAroundSelection(),
+                Selection.Nodes.Count > 0 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
 
             evt.menu.AppendSeparator();
             evt.menu.AppendAction("Delete   (Del)", _ => DeleteSelection(), Selection.IsEmpty ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
-        }
-
-        /// <summary>Collapse/expand every selected node; one dirty flip, only if any changed.</summary>
-        void SetCollapsedForSelection(bool collapsed)
-        {
-            bool any = false;
-            foreach (var ne in Selection.Nodes)
-                any |= ne.SetCollapsed(collapsed, notify: false);
-            if (any) NotifyGraphChanged();
-        }
-
-        /// <summary>Collapse/expand every node in the graph; one dirty flip, only if any changed.</summary>
-        void SetCollapsedForAll(bool collapsed)
-        {
-            bool any = false;
-            foreach (var ne in NodeElements)
-                any |= ne.SetCollapsed(collapsed, notify: false);
-            if (any) NotifyGraphChanged();
         }
 
         /// <summary>
@@ -260,6 +245,54 @@ namespace CupkekGames.Graphs.Editor
             EditorUtility.SetDirty(Asset);
 
             AddGroupElement(group);
+            if (_groupElements.TryGetValue(group, out var ge))
+            {
+                Selection.SetTo(ge);
+                ge.schedule.Execute(ge.BeginRename); // pop the title field, ready to type
+            }
+            RaiseGraphChanged();
+        }
+
+        /// <summary>
+        /// Create a <see cref="GraphGroup"/> sized to wrap the current node selection
+        /// (with padding + room for the title bar). The ergonomic "box these nodes" —
+        /// e.g. select all the modal nodes → Group Selection → a titled box around them.
+        /// Membership stays spatial, so the boxed nodes are simply the ones now inside.
+        /// </summary>
+        public void CreateGroupAroundSelection()
+        {
+            if (Asset == null) return;
+            var nodes = Selection.Nodes;
+            if (nodes.Count == 0) return;
+
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var ne in nodes)
+            {
+                if (ne?.Node == null) continue;
+                Vector2 p = ne.Node.Position;
+                float w = ne.layout.width  > 0f && !float.IsNaN(ne.layout.width)  ? ne.layout.width  : ne.Node.PreferredWidth;
+                float h = ne.layout.height > 0f && !float.IsNaN(ne.layout.height) ? ne.layout.height : AutoLayoutEngine.NodeHeight;
+                minX = Mathf.Min(minX, p.x);     minY = Mathf.Min(minY, p.y);
+                maxX = Mathf.Max(maxX, p.x + w);  maxY = Mathf.Max(maxY, p.y + h);
+            }
+            if (minX > maxX) return;
+
+            // padTop leaves room for the title bar so it doesn't overlap the top nodes.
+            const float padX = 24f, padTop = 36f, padBottom = 24f;
+            var bounds = new Rect(minX - padX, minY - padTop,
+                                  (maxX - minX) + padX * 2f, (maxY - minY) + padTop + padBottom);
+
+            var group = new GraphGroup { Title = "Group", Bounds = bounds };
+            Undo.RegisterCompleteObjectUndo(Asset, "Group Selection");
+            Asset.AddGroup(group);
+            EditorUtility.SetDirty(Asset);
+
+            AddGroupElement(group);
+            if (_groupElements.TryGetValue(group, out var ge))
+            {
+                Selection.SetTo(ge);
+                ge.schedule.Execute(ge.BeginRename); // pop the title field, ready to type
+            }
             RaiseGraphChanged();
         }
 
@@ -306,6 +339,10 @@ namespace CupkekGames.Graphs.Editor
             EditorUtility.SetDirty(Asset);
 
             AddNodeElement(node);
+            // Auto-select the freshly created node so it's ready to edit and shows
+            // in the docked inspector without a follow-up click. Covers both create
+            // paths (Add Node / Space search and drag-to-empty-space).
+            if (TryGetNodeElement(node, out var ne)) Selection.SetTo(ne);
             RaiseGraphChanged();
             return node;
         }

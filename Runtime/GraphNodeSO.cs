@@ -91,11 +91,13 @@ namespace CupkekGames.Graphs
         public virtual bool ShowInlineProperties => true;
 
         /// <summary>
-        /// Preferred card width in canvas-world pixels. Cards grow vertically
-        /// with content; width is the per-type knob for "how much room do my
-        /// fields need." Defaults to 240 — narrow enough to keep the canvas
-        /// scannable, wide enough for most label + field rows.
+        /// Preferred card width in canvas-world pixels. With editing moved to
+        /// the docked inspector panel the on-canvas card is a compact chip
+        /// (title + badges + ports), so the default is a slim 180 — wide enough
+        /// for a title and the trailing badge row, narrow enough that the canvas
+        /// stays a scannable map. Types that still render an inline body can
+        /// override wider.
         /// </summary>
-        public virtual float PreferredWidth => 240f;
+        public virtual float PreferredWidth => 180f;
     }
 }

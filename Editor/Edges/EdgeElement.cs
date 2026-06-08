@@ -31,6 +31,11 @@ namespace CupkekGames.Graphs.Editor
         public bool IsSelected { get; private set; }
         bool _isHover;
 
+        // Play-mode runtime tint pushed by the canvas from the bound asset's runtime
+        // state source (e.g. the active flow path). Null = default look. Sits below
+        // selection + hover so a wire can still be highlighted while the overlay is on.
+        Color? _runtimeColor;
+
         NodeElement _sourceNode;
         NodeElement _targetNode;
         Vector2 _localOffset;
@@ -148,6 +153,18 @@ namespace CupkekGames.Graphs.Editor
         {
             if (IsSelected == selected) return;
             IsSelected = selected;
+            MarkDirtyRepaint();
+        }
+
+        /// <summary>
+        /// Set (or clear, with null) this edge's play-mode runtime tint. Pushed by the
+        /// canvas from an <see cref="IGraphRuntimeEdgeColorSource"/>; cleared on exit-play.
+        /// Below selection / hover in priority so the user can still highlight a wire.
+        /// </summary>
+        public void SetRuntimeColor(Color? color)
+        {
+            if (_runtimeColor == color) return;
+            _runtimeColor = color;
             MarkDirtyRepaint();
         }
 
@@ -418,12 +435,15 @@ namespace CupkekGames.Graphs.Editor
             // wire doesn't paint a stale hover state.
             bool hover = _isHover && !(Canvas?.IsConnectionDragActive == true);
 
-            // Selection wins over hover; hover wins over the resting look.
+            // Selection wins over hover; hover over the runtime tint; runtime over the
+            // resting look. A runtime-tinted edge also paints at the thicker width so the
+            // live flow pops against the default wires.
             Color color;
             float width;
-            if (IsSelected)      { color = SelectedColor; width = SelectedStrokeWidth; }
-            else if (hover)      { color = HoverColor;    width = HoverStrokeWidth; }
-            else                 { color = EdgeColor;     width = StrokeWidth; }
+            if (IsSelected)                  { color = SelectedColor;       width = SelectedStrokeWidth; }
+            else if (hover)                  { color = HoverColor;          width = HoverStrokeWidth; }
+            else if (_runtimeColor.HasValue) { color = _runtimeColor.Value; width = HoverStrokeWidth; }
+            else                             { color = EdgeColor;           width = StrokeWidth; }
 
             var painter = ctx.painter2D;
             painter.strokeColor = color;

@@ -91,6 +91,26 @@ namespace CupkekGames.Graphs.Editor
             _groupElements[group] = element;
         }
 
+        /// <summary>
+        /// The node elements spatially inside <paramref name="group"/> — a node belongs
+        /// to the group whose box contains its (approximate) centre. Membership is
+        /// <b>derived</b>, never stored; shared by group drag (members move with the box)
+        /// and auto-layout (clustering). The centre uses the node's
+        /// <see cref="GraphNodeSO.PreferredWidth"/> + the layout engine's nominal height
+        /// so this and <see cref="AutoLayoutEngine"/> agree on what's "inside".
+        /// </summary>
+        public IEnumerable<NodeElement> NodesInGroup(GraphGroup group)
+        {
+            if (group == null) yield break;
+            foreach (var ne in _nodeElements.Values)
+            {
+                if (ne?.Node == null) continue;
+                var center = ne.Node.Position
+                    + new UnityEngine.Vector2(ne.Node.PreferredWidth, AutoLayoutEngine.NodeHeight) * 0.5f;
+                if (group.Bounds.Contains(center)) yield return ne;
+            }
+        }
+
         void AddEdgeElement(GraphConnection conn)
         {
             if (conn == null || _edgeElements.ContainsKey(conn)) return;

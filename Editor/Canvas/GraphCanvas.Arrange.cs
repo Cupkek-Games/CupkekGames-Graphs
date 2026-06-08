@@ -17,12 +17,34 @@ namespace CupkekGames.Graphs.Editor
         /// <summary>
         /// Pan + zoom so the selected nodes fill the viewport (with padding).
         /// Never zooms past 1:1 — framing shows the set, not a close-up. Falls
-        /// back to <see cref="ResetView"/> when nothing is selected.
+        /// back to <see cref="FrameAll"/> when nothing is selected.
         /// </summary>
         public void FrameSelection()
         {
-            if (!TryGetSelectionBounds(out var min, out var max)) { ResetView(); return; }
+            if (!TryGetSelectionBounds(out var min, out var max)) { FrameAll(); return; }
+            FrameBounds(min, max);
+        }
 
+        /// <summary>
+        /// Pan + zoom so EVERY node in the graph fills the viewport (with
+        /// padding) — the "Fit View" action and the view shown on first open.
+        /// Never zooms past 1:1. Falls back to <see cref="ResetView"/> for an
+        /// empty graph (nothing to frame → identity view).
+        /// </summary>
+        public void FrameAll()
+        {
+            if (!TryGetAllNodesBounds(out var min, out var max)) { ResetView(); return; }
+            FrameBounds(min, max);
+        }
+
+        // Pan + zoom so the world-space rect [min,max] fills the viewport with a
+        // fixed screen-space margin, clamped to 1:1 (framing shows the set, not a
+        // close-up). The zoom step is skipped until the canvas has a resolved
+        // layout (width/height > 0) — callers that frame right after a bind must
+        // defer until the first layout pass or CenterOn divides by a NaN size.
+        // Shared by FrameSelection / FrameAll.
+        void FrameBounds(Vector2 min, Vector2 max)
+        {
             const float pad = 80f;
             float bw = (max.x - min.x) + pad * 2f;
             float bh = (max.y - min.y) + pad * 2f;
@@ -37,11 +59,19 @@ namespace CupkekGames.Graphs.Editor
         }
 
         bool TryGetSelectionBounds(out Vector2 min, out Vector2 max)
+            => TryGetNodeBounds(Selection.Nodes, out min, out max);
+
+        // Bounds over EVERY mounted node element (not just the selection) — the
+        // input to FrameAll / the first-open frame.
+        bool TryGetAllNodesBounds(out Vector2 min, out Vector2 max)
+            => TryGetNodeBounds(_nodeElements.Values, out min, out max);
+
+        static bool TryGetNodeBounds(IEnumerable<NodeElement> nodes, out Vector2 min, out Vector2 max)
         {
             min = new Vector2(float.MaxValue, float.MaxValue);
             max = new Vector2(float.MinValue, float.MinValue);
             bool any = false;
-            foreach (var ne in Selection.Nodes)
+            foreach (var ne in nodes)
             {
                 if (ne?.Node == null) continue;
                 any = true;
@@ -55,7 +85,7 @@ namespace CupkekGames.Graphs.Editor
 
         static Vector2 NodeSize(NodeElement ne)
         {
-            float w = ne.layout.width  > 0f && !float.IsNaN(ne.layout.width)  ? ne.layout.width  : (ne.Node != null ? ne.Node.PreferredWidth : 240f);
+            float w = ne.layout.width  > 0f && !float.IsNaN(ne.layout.width)  ? ne.layout.width  : (ne.Node != null ? ne.Node.PreferredWidth : 180f);
             float h = ne.layout.height > 0f && !float.IsNaN(ne.layout.height) ? ne.layout.height : 80f;
             return new Vector2(w, h);
         }

@@ -79,8 +79,11 @@ namespace CupkekGames.Graphs.Editor
         void OnPointerUp(PointerUpEvent evt)
         {
             if (!_active || evt.pointerId != _pointerId) return;
-            SelectNodesInMarquee((Vector2)evt.localPosition);
-            EndMarquee();
+            // EndMarquee in a finally so a faulting selection callback (e.g. a
+            // panel rebuild) can never strand the rect + leave the pointer
+            // captured. The rect is the visible artifact users see "stuck".
+            try { SelectNodesInMarquee((Vector2)evt.localPosition); }
+            finally { EndMarquee(); }
             evt.StopPropagation();
         }
 

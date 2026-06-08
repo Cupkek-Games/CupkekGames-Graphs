@@ -106,7 +106,7 @@ namespace CupkekGames.Graphs.Editor
 
             Add(MakeButton("Auto Layout", () => _window.Canvas?.AutoLayout()));
 
-            Add(MakeButton("Fit View", () => _window.Canvas?.ResetView()));
+            Add(MakeButton("Fit View", () => _window.Canvas?.FrameAll()));
 
             // Route through the window's SaveChanges override so the
             // hasUnsavedChanges flag clears (and the "*" in the title

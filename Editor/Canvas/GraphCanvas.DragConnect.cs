@@ -420,6 +420,39 @@ namespace CupkekGames.Graphs.Editor
         }
 
         /// <summary>
+        /// Refresh every mounted port's filled connected-dot from the current
+        /// connection set. Hooked to <see cref="GraphChanged"/> (raised on bind +
+        /// every connect / detach), so a port shows a dot exactly when a
+        /// connection lands on (input) / originates from (output) it.
+        /// </summary>
+        public void RefreshPortStates()
+        {
+            if (Asset == null) return;
+            foreach (var ne in _nodeElements.Values)
+            {
+                if (ne == null || ne.Node == null) continue;
+                var guid = ne.Node.Guid;
+                foreach (var p in ne.InputPorts)
+                    if (p != null) p.SetConnected(IsPortConnected(guid, p.PortId, isInput: true));
+                foreach (var p in ne.OutputPorts)
+                    if (p != null) p.SetConnected(IsPortConnected(guid, p.PortId, isInput: false));
+            }
+        }
+
+        bool IsPortConnected(SerializedGuid nodeGuid, string portId, bool isInput)
+        {
+            foreach (var c in Asset.Connections)
+            {
+                if (isInput)
+                {
+                    if (c.TargetNodeGuid == nodeGuid && SamePortId(c.TargetPortId, portId)) return true;
+                }
+                else if (c.SourceNodeGuid == nodeGuid && SamePortId(c.SourcePortId, portId)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Detach an existing connection for a wire-drag reroute, returning the
         /// port that stays ANCHORED while the loose end is dragged. Grabbing
         /// the connection's target/input half keeps the source OUTPUT port (so

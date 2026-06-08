@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -34,6 +35,9 @@ namespace CupkekGames.Graphs.Editor
         bool _dragging;
         bool _resizing;
         int _pointerId = -1;
+
+        // Nodes captured at drag-start that move with the box (spatial members).
+        List<NodeElement> _dragMembers;
 
         public GraphGroup Group => _group;
         public bool IsSelected { get; private set; }
@@ -107,7 +111,6 @@ namespace CupkekGames.Graphs.Editor
                     flexGrow = 1f,
                 },
             };
-            _titleLabel.RegisterCallback<MouseDownEvent>(OnTitleLabelMouseDown);
             _titleBar.Add(_titleLabel);
 
             _titleField = new TextField { value = group.Title };
@@ -194,20 +197,20 @@ namespace CupkekGames.Graphs.Editor
         // Title editing
         // ---------------------------------------------------------------
 
-        void OnTitleLabelMouseDown(MouseDownEvent evt)
-        {
-            if (evt.button != 0 || evt.clickCount != 2) return; // double-click only
-            StartTitleEdit();
-            evt.StopPropagation();
-        }
-
         void StartTitleEdit()
         {
             _titleField.SetValueWithoutNotify(_group.Title);
             _titleField.style.display = DisplayStyle.Flex;
             _titleLabel.style.display = DisplayStyle.None;
             _titleField.Focus();
+            _titleField.SelectAll(); // so the default "Group" can be typed straight over
         }
+
+        /// <summary>
+        /// Enter title-edit mode programmatically — used to drop a freshly created
+        /// group straight into "name it" so the user can type the title immediately.
+        /// </summary>
+        public void BeginRename() => StartTitleEdit();
 
         void CommitTitleEdit()
         {
@@ -237,6 +240,20 @@ namespace CupkekGames.Graphs.Editor
             if (evt.button != (int)MouseButton.LeftMouse || evt.altKey) return;
             if (_dragging || _resizing) return;
 
+            // Double-click the title bar → rename. Detected by timing (see field note)
+            // and handled BEFORE arming the drag, so the drag's pointer-capture can't
+            // steal focus from the title field.
+            // Double-click the title bar → rename. DEFERRED a frame (schedule.Execute):
+            // running it inline would let this click's pointer-up immediately blur the
+            // field (FocusOut → CommitTitleEdit), hiding it before you could type — the
+            // same reason the auto-rename-on-create defers too.
+            if (evt.clickCount == 2)
+            {
+                evt.StopPropagation();
+                schedule.Execute(StartTitleEdit);
+                return;
+            }
+
             // Selection update first — same modifier rules as nodes.
             if (evt.shiftKey) _canvas.Selection.Add(this);
             else if (evt.ctrlKey || evt.commandKey) _canvas.Selection.Toggle(this);
@@ -246,6 +263,10 @@ namespace CupkekGames.Graphs.Editor
             _dragging = true;
             _pointerId = evt.pointerId;
             _titleBar.CapturePointer(evt.pointerId);
+
+            // Snapshot the nodes inside the box now so they move WITH the group —
+            // membership is spatial, so "what's in the box comes along".
+            _dragMembers = new List<NodeElement>(_canvas.NodesInGroup(_group));
 
             if (_canvas.Asset != null)
                 Undo.RegisterCompleteObjectUndo(_canvas.Asset, "Move Group");
@@ -263,6 +284,17 @@ namespace CupkekGames.Graphs.Editor
             b.position += worldDelta;
             _group.Bounds = b;
             ApplyBounds();
+
+            // Carry the captured members along by the same delta.
+            if (_dragMembers != null)
+            {
+                foreach (var ne in _dragMembers)
+                {
+                    if (ne?.Node == null) continue;
+                    ne.SetWorldPosition(ne.Node.Position + worldDelta);
+                    _canvas.RefreshEdgesForNode(ne.Node);
+                }
+            }
 
             evt.StopPropagation();
         }
@@ -285,7 +317,11 @@ namespace CupkekGames.Graphs.Editor
                 _titleBar.ReleasePointer(_pointerId);
             _dragging = false;
             _pointerId = -1;
+            _dragMembers = null;
             if (_canvas.Asset != null) EditorUtility.SetDirty(_canvas.Asset);
+            // Members' positions changed (sidecar) + the box moved — flip the window
+            // dirty flag so the next save persists both.
+            _canvas.NotifyGraphChanged();
         }
 
         void OnTitleBarPointerEnter(PointerEnterEvent evt)

@@ -35,6 +35,11 @@ namespace CupkekGames.Graphs.Editor
         Vector2 _viewOffset = Vector2.zero;
         float _viewZoom = 1f;
 
+        // Set by RequestInitialFrame after a bind; consumed once the canvas
+        // layout resolves so the graph opens fit-to-content instead of parked
+        // at world-origin (the old first-open bug).
+        bool _pendingFrameAll;
+
         /// <summary>Most recent pointer panel-space position; used as the spawn
         /// point for keyboard-triggered node search (Space).</summary>
         Vector2 _lastPointerPanelPos;
@@ -45,6 +50,25 @@ namespace CupkekGames.Graphs.Editor
 
         /// <summary>Selection state — single instance, lives for the canvas's lifetime.</summary>
         public GraphSelection Selection { get; } = new GraphSelection();
+
+        /// <summary>
+        /// When true (default), node cards render their serialized fields inline
+        /// in the card body. The window sets this false when it hosts a docked
+        /// <see cref="GraphInspectorPanel"/> — cards stay compact and editing
+        /// happens in the panel. Read by <see cref="NodeElement"/> at build time,
+        /// so set it before binding an asset.
+        /// </summary>
+        public bool InlineBodyEnabled { get; set; } = true;
+
+        /// <summary>
+        /// When true the canvas is a read-only viewer: no structural edits — create /
+        /// delete / connect / rename / cut-paste-duplicate are all suppressed. Pan /
+        /// zoom / select / collapse / Fit and the play-mode runtime overlay stay on.
+        /// Set this BEFORE <see cref="BindToAsset"/> so node + port elements skip their
+        /// editing manipulators. Used by the Graph Runtime Debugger, which binds the
+        /// real live asset and must never mutate it.
+        /// </summary>
+        public bool ReadOnly { get; set; }
 
         /// <summary>
         /// When true, node-drag rounds positions to the nearest
@@ -127,6 +151,11 @@ namespace CupkekGames.Graphs.Editor
         public GraphCanvas()
         {
             AddToClassList("cgg-graph-canvas");
+
+            // Keep each port's filled connected-dot in sync: BindToAsset raises
+            // GraphChanged after building nodes, and so does every connect /
+            // detach, so this one hook covers every connection change.
+            GraphChanged += RefreshPortStates;
 
             // Attach the shared visual foundation. Class names + state
             // modifiers in GraphEditor.uss (cgg-graph-node, --selected /
@@ -229,7 +258,7 @@ namespace CupkekGames.Graphs.Editor
 
         void OnKeyDown(KeyDownEvent evt)
         {
-            if (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace)
+            if (!ReadOnly && (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace))
             {
                 if (DeleteSelection())
                     evt.StopPropagation();
@@ -242,19 +271,22 @@ namespace CupkekGames.Graphs.Editor
                 switch (evt.keyCode)
                 {
                     case KeyCode.Space:
+                        if (ReadOnly) break;   // no node creation in a read-only viewer
                         OpenNodeSearchAtPanel(_lastPointerPanelPos);
                         evt.StopPropagation();
                         return;
                     case KeyCode.F:
                         // Frame the selection if any nodes are selected, else fit all.
                         if (Selection.Nodes.Count > 0) FrameSelection();
-                        else ResetView();
+                        else FrameAll();
                         evt.StopPropagation();
                         return;
                 }
             }
 
-            // Clipboard shortcuts — Cmd on macOS, Ctrl elsewhere.
+            // Clipboard shortcuts — Cmd on macOS, Ctrl elsewhere. All mutate, so
+            // they're off in a read-only viewer.
+            if (ReadOnly) return;
             bool cmd = evt.ctrlKey || evt.commandKey;
             if (!cmd) return;
 
@@ -339,6 +371,36 @@ namespace CupkekGames.Graphs.Editor
         }
 
         /// <summary>
+        /// Frame all nodes once the canvas has a resolved layout. Called after a
+        /// bind (first open / asset switch / descend) so the graph opens centered
+        /// and fit instead of parked at world-origin. The frame is DEFERRED: at
+        /// bind time the canvas hasn't had its first layout pass, so its
+        /// width/height are still NaN and <see cref="CenterOn"/>'s fit math can't
+        /// run — this polls each frame until the viewport size resolves, then
+        /// frames once.
+        /// </summary>
+        void RequestInitialFrame()
+        {
+            _pendingFrameAll = true;
+            schedule.Execute(PollInitialFrame);
+        }
+
+        void PollInitialFrame()
+        {
+            if (!_pendingFrameAll) return; // already framed, or unbound
+            // The fit math divides by the viewport size — wait for the first
+            // layout pass to give the canvas a real width/height.
+            if (float.IsNaN(layout.width) || layout.width <= 0f ||
+                float.IsNaN(layout.height) || layout.height <= 0f)
+            {
+                schedule.Execute(PollInitialFrame).ExecuteLater(16); // retry next frame
+                return;
+            }
+            _pendingFrameAll = false;
+            FrameAll();
+        }
+
+        /// <summary>
         /// Run a one-shot tree layout over the bound asset. See
         /// <see cref="AutoLayoutEngine"/> for the algorithm. The whole
         /// pass is wrapped in a single Undo group so Ctrl+Z restores the
@@ -349,9 +411,13 @@ namespace CupkekGames.Graphs.Editor
             if (Asset == null) return;
             AutoLayoutEngine.LayoutTree(Asset);
 
-            // Snap visuals to the new positions + re-route edges.
+            // Snap visuals to the new positions + re-route edges. Group boxes were
+            // shrink-wrapped + repositioned around their members by the engine, so
+            // refresh their bounds too.
             foreach (var ne in _nodeElements.Values)
                 ne?.ApplyPosition();
+            foreach (var ge in _groupElements.Values)
+                ge?.ApplyBounds();
             foreach (var ed in _edgeElements.Values)
                 ed?.Refresh();
 
@@ -411,6 +477,10 @@ namespace CupkekGames.Graphs.Editor
             // Pick up the play-mode runtime overlay for the newly-bound asset
             // (no-op outside play mode / when the asset supplies no source).
             SetupRuntimeSource();
+
+            // Open fit-to-content: frame all nodes once the layout resolves
+            // (deferred — the viewport size is still NaN at bind time).
+            RequestInitialFrame();
         }
 
         /// <summary>
@@ -486,6 +556,10 @@ namespace CupkekGames.Graphs.Editor
         {
             if (Asset == null && _nodeElements.Count == 0 && _menuManipulator == null)
                 return;
+
+            // Cancel a not-yet-consumed first-open frame so its deferred poll
+            // can't fire against the next bind's nodes (or after unbind).
+            _pendingFrameAll = false;
 
             TeardownRuntimeSource();
 

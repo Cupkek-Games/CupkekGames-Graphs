@@ -67,6 +67,7 @@ namespace CupkekGames.Graphs.Editor
             }
             if (_instancePicker != null) { _instancePicker.RemoveFromHierarchy(); _instancePicker = null; }
             foreach (var ne in NodeElements) ne?.SetRuntimeState(null);
+            foreach (var ee in _edgeElements.Values) ee?.SetRuntimeColor(null);
         }
 
         void PollRuntimeSource() => (_runtimeSource as IGraphRuntimePollable)?.Poll();
@@ -81,7 +82,28 @@ namespace CupkekGames.Graphs.Editor
                     live && _runtimeSource.TryGetState(ne.Node, out var st) ? st : (GraphNodeRuntimeState?)null;
                 ne.SetRuntimeState(s);
             }
+            ApplyEdgeRuntimeColors(live);
             RefreshInstancePicker(live);
+        }
+
+        // Tint edges from an optional IGraphRuntimeEdgeColorSource (e.g. the active flow
+        // path). Sources that don't implement it leave every edge at its default look.
+        void ApplyEdgeRuntimeColors(bool live)
+        {
+            var edgeSource = live ? _runtimeSource as IGraphRuntimeEdgeColorSource : null;
+            foreach (var ee in _edgeElements.Values)
+            {
+                if (ee == null) continue;
+                Color? c = null;
+                if (edgeSource != null)
+                {
+                    var from = ee.SourceNode?.Node;
+                    var to = ee.TargetNode?.Node;
+                    if (from != null && to != null && edgeSource.TryGetEdgeColor(from, to, out var col))
+                        c = col;
+                }
+                ee.SetRuntimeColor(c);
+            }
         }
 
         // Show a dropdown to pick which live instance to inspect, for sources that

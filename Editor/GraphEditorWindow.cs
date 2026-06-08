@@ -46,6 +46,10 @@ namespace CupkekGames.Graphs.Editor
         GraphToolbar _toolbar;
         ValidationFooter _validationFooter;
         GraphStatusBar _statusBar;
+        GraphInspectorPanel _inspectorPanel;
+
+        // Persisted width of the drag-resizable docked inspector pane.
+        const string InspectorWidthPrefKey = "CupkekGames.Graphs.GraphEditor.InspectorWidth";
 
         /// <summary>The on-disk asset the window is bound to.</summary>
         public GraphAssetSO CurrentAsset => _currentAsset;
@@ -156,10 +160,23 @@ namespace CupkekGames.Graphs.Editor
 
         void OnDisable()
         {
+            // Remember the inspector width before the window goes away.
+            PersistInspectorWidth();
+
             // Working copy is transient and tied to this window — clean
             // up so its undo entries don't dangle and the next editor
             // session starts fresh.
             DestroyWorkingCopy();
+        }
+
+        // Save the current docked-inspector width (set by dragging the splitter) so it
+        // restores next open. Reads the resolved width; guards the pre-layout NaN case.
+        void PersistInspectorWidth()
+        {
+            if (_inspectorPanel == null) return;
+            float w = _inspectorPanel.resolvedStyle.width;
+            if (!float.IsNaN(w) && w > 50f)
+                EditorPrefs.SetFloat(InspectorWidthPrefKey, w);
         }
 
         public void SetAsset(GraphAssetSO asset)
@@ -269,7 +286,7 @@ namespace CupkekGames.Graphs.Editor
             _workingAsset = _currentAsset.CloneForEditing();
             // Positions live in the sidecar, not the asset — load them onto the freshly
             // cloned (position-less) nodes before the canvas lays them out.
-            ApplyLayout(_workingAsset, _currentAsset);
+            GraphLayoutIO.Apply(_workingAsset, _currentAsset);
             _canvas.BindToAsset(_workingAsset);
         }
 
@@ -344,6 +361,9 @@ namespace CupkekGames.Graphs.Editor
 
         void BuildLayout(Type canvasType)
         {
+            // Remember the inspector width across a layout rebuild (canvas-type change).
+            PersistInspectorWidth();
+
             var root = rootVisualElement;
             root.Clear();
 
@@ -361,8 +381,25 @@ namespace CupkekGames.Graphs.Editor
             root.Add(mainRow);
 
             _canvas = (GraphCanvas)Activator.CreateInstance(canvasType);
-            _canvas.style.flexGrow = 1f;
-            mainRow.Add(_canvas);
+            // Node fields are edited in the docked inspector panel, so the canvas
+            // keeps its cards compact. Set before the asset binds (below) so the
+            // node elements build without inline bodies.
+            _canvas.InlineBodyEnabled = false;
+            _canvas.style.minWidth = 200f; // the splitter can't swallow the canvas
+
+            _inspectorPanel = new GraphInspectorPanel(_canvas);
+
+            // Canvas (flexible) + inspector (fixed pane) in a TwoPaneSplitView so the
+            // divider between them is a draggable resize handle. The chosen width
+            // persists per user (see PersistInspectorWidth).
+            float inspectorWidth = EditorPrefs.GetFloat(InspectorWidthPrefKey, 300f);
+            var split = new TwoPaneSplitView(1, inspectorWidth, TwoPaneSplitViewOrientation.Horizontal)
+            {
+                style = { flexGrow = 1f },
+            };
+            split.Add(_canvas);          // index 0 — flexible pane
+            split.Add(_inspectorPanel);  // index 1 — fixed pane (drag the divider to resize)
+            mainRow.Add(split);
 
             _validationFooter = new ValidationFooter(_canvas);
             root.Add(_validationFooter);
@@ -403,36 +440,14 @@ namespace CupkekGames.Graphs.Editor
         // with structural edits in source control.
         // ---------------------------------------------------------------
 
-        static string LayoutPathFor(GraphAssetSO asset)
-        {
-            string path = AssetDatabase.GetAssetPath(asset);
-            return string.IsNullOrEmpty(path) ? null : System.IO.Path.ChangeExtension(path, "layout.asset");
-        }
-
-        // Copy positions from the sidecar onto the working copy's nodes (by guid).
-        // Missing entries (new nodes, or a graph with no sidecar yet) stay at (0,0)
-        // until the next save seeds them.
-        static void ApplyLayout(GraphAssetSO working, GraphAssetSO original)
-        {
-            string path = LayoutPathFor(original);
-            if (string.IsNullOrEmpty(path)) return;
-            var layout = AssetDatabase.LoadAssetAtPath<GraphLayout>(path);
-            if (layout == null) return;
-
-            foreach (var n in working.Nodes)
-            {
-                if (n == null) continue;
-                if (layout.TryGet(n.Guid.ValueStr, out var pos))
-                    n.Position = pos;
-                n.Collapsed = layout.IsCollapsed(n.Guid.ValueStr);
-            }
-        }
+        // Loading the sidecar (positions + collapsed flags) onto a graph's nodes is
+        // shared with the runtime debugger — see GraphLayoutIO.Apply / PathFor.
 
         // Write the working copy's node positions to the sidecar (creating it if needed)
         // and prune entries for deleted nodes. Flushed by the SaveAssets in SaveChanges.
         static void SaveLayout(GraphAssetSO working, GraphAssetSO original)
         {
-            string path = LayoutPathFor(original);
+            string path = GraphLayoutIO.PathFor(original);
             if (string.IsNullOrEmpty(path)) return;
 
             var layout = AssetDatabase.LoadAssetAtPath<GraphLayout>(path);

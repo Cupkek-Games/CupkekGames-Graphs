@@ -53,5 +53,18 @@ namespace CupkekGames.Graphs
     {
         void Poll();
     }
+
+    /// <summary>
+    /// Additive capability: a source that also tints <b>edges</b> in play mode — e.g. to
+    /// light the active flow path through the graph, not just the nodes. The canvas asks
+    /// per connection, passing that edge's endpoint nodes (source → target); return true
+    /// plus a colour to override the edge's stroke, false to leave it at the default look.
+    /// Optional — sources that don't implement it leave edges untinted, so the base render
+    /// path is unchanged.
+    /// </summary>
+    public interface IGraphRuntimeEdgeColorSource
+    {
+        bool TryGetEdgeColor(GraphNodeSO from, GraphNodeSO to, out UnityEngine.Color color);
+    }
 }
 #endif
