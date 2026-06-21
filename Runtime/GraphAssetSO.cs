@@ -107,6 +107,17 @@ namespace CupkekGames.Graphs
         // ---------------------------------------------------------------
 
         /// <summary>
+        /// The on-disk asset this transient working copy stands for, or this
+        /// asset itself when it is not a working copy. Identity-sensitive
+        /// checks (sub-graph self-reference / cycle validation) compare
+        /// against this instead of the clone reference, so the working copy
+        /// validates live without waiting for a save. Set by
+        /// <see cref="CloneForEditing"/>; never serialized.
+        /// </summary>
+        public GraphAssetSO EditorIdentity => _editorIdentity != null ? _editorIdentity : this;
+        [NonSerialized] private GraphAssetSO _editorIdentity;
+
+        /// <summary>
         /// Build a transient clone of this asset for editor use. Nodes
         /// are individually re-instantiated with preserved <c>Guid</c>s
         /// so <see cref="GraphConnection"/> edges still resolve. Domain
@@ -123,6 +134,10 @@ namespace CupkekGames.Graphs
             var clone = (GraphAssetSO)Instantiate(this);
             clone.hideFlags = HideFlags.HideAndDontSave;
             clone.name = name + " (working)";
+
+            // Identity chain: a clone of a clone (shouldn't happen, but cheap
+            // to be correct about) still resolves to the on-disk original.
+            clone._editorIdentity = EditorIdentity;
 
             // Object.Instantiate gives us a new List<GraphNodeSO> but the
             // entries still reference the originals — clone each node so
@@ -245,11 +260,16 @@ namespace CupkekGames.Graphs
 
         /// <summary>
         /// Surface validation issues in the editor's footer panel. Default
-        /// returns no issues; subclasses override to enforce shape rules.
+        /// reports structural connection problems (deleted endpoint nodes,
+        /// stale port ids after a node type changed its ports) via
+        /// <see cref="GraphConnectionValidation"/>. Overrides REPLACE this —
+        /// include the same check by yielding from
+        /// <c>GraphConnectionValidation.Validate(this)</c> alongside the
+        /// domain rules (see NavGraphSO / BehaviourTree for the pattern).
         /// </summary>
         public virtual IEnumerable<GraphValidationIssue> Validate()
         {
-            return Array.Empty<GraphValidationIssue>();
+            return GraphConnectionValidation.Validate(this);
         }
 
         /// <summary>

@@ -5,7 +5,7 @@ Generic graph-editing foundation for CupkekGames packages. Ships:
 - **Runtime abstractions** — `GraphAssetSO`, `GraphNodeSO`, `GraphConnection`, `GraphPortDef` — for any graph-shaped ScriptableObject asset (behaviour trees, navigation graphs, dialogue graphs, quest graphs, ability composition, ...).
 - **Custom UI Toolkit canvas editor** — pan/zoom, multi-select, marquee, drag-to-connect, copy/paste, undo/redo, search-driven node creation, sticky notes, group regions, validation footer. **No `UnityEditor.Experimental.GraphView` dependency** — built directly on UI Toolkit primitives (`VisualElement`, `Painter2D`, manipulators).
 
-See `Documentation/GRAPHS_PACKAGE_DESIGN.md` (lives in `com.cupkekgames.luna` during design phase; moves here when the package fully lands) for the architecture, the locked design decisions, and the implementation phasing.
+The original design doc (`GRAPHS_PACKAGE_DESIGN.md` — architecture, locked decisions, implementation phasing) was removed in the 2026-06-11 luna docs purge; recover it from the luna repo's git history if needed (`git log --diff-filter=D -- Documentation/GRAPHS_PACKAGE_DESIGN.md`).
 
 ## Status
 

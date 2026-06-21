@@ -108,6 +108,13 @@ namespace CupkekGames.Graphs.Editor
 
             Add(MakeButton("Fit View", () => _window.Canvas?.FrameAll()));
 
+            var repairButton = MakeButton("Repair", RepairConnections);
+            repairButton.tooltip =
+                "Repair stale connections: remove edges to deleted nodes, remap port ids " +
+                "when a node type changed its ports (single-port nodes only — ambiguous " +
+                "cases stay flagged in the validation footer).";
+            Add(repairButton);
+
             // Route through the window's SaveChanges override so the
             // hasUnsavedChanges flag clears (and the "*" in the title
             // disappears) AND so the working copy's state applies back
@@ -126,6 +133,32 @@ namespace CupkekGames.Graphs.Editor
             RefreshDirtyButtons();
 
             Refresh();
+        }
+
+        /// <summary>
+        /// Run <see cref="GraphConnectionValidation.Repair"/> on the working
+        /// copy. Mutations land in the working copy only — Save applies them,
+        /// Discard throws them away, same as any canvas edit. Rebinds the
+        /// canvas afterwards so removed/remapped edges rebuild, and raises
+        /// GraphChanged so the window marks itself dirty.
+        /// </summary>
+        void RepairConnections()
+        {
+            var working = _window.WorkingAsset;
+            if (working == null || _window.Canvas == null) return;
+
+            GraphConnectionValidation.RepairReport report = GraphConnectionValidation.Repair(working);
+
+            if (report.ChangedAnything)
+            {
+                _window.Canvas.BindToAsset(working);
+                _window.Canvas.NotifyGraphChanged();
+            }
+
+            string summary = report.ChangedAnything || report.Unrepairable.Count > 0
+                ? $"removed {report.RemovedConnections} dead connection(s), remapped {report.RemappedPortIds} port id(s), {report.Unrepairable.Count} ambiguous left (see validation footer)"
+                : "nothing to repair";
+            Debug.Log($"[Graphs] Repair Connections on '{working.name}': {summary}.");
         }
 
         void AddSeparator()

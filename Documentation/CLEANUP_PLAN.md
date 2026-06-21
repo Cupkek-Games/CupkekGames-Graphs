@@ -1,4 +1,4 @@
-> **⚠️ SUPERSEDED (2026-06-05) — historical.** This 2026-05-16 plan predates the nav rebuild + the Core split; several types it names (`LunaNavigationManager`, `LunaNavDestinationSO`, `LunaNavigationGraphSO`, `NavInstanceCache`, …) no longer exist. The graph editor + nav rebuild shipped — for current state see [Editor-UX-Roadmap.md](Editor-UX-Roadmap.md) and luna's `Documentation/NavGraph-Manual-Setup.md`.
+> **⚠️ SUPERSEDED (2026-06-05) — historical.** This 2026-05-16 plan predates the nav rebuild + the Core split; several types it names (`LunaNavigationManager`, `LunaNavDestinationSO`, `LunaNavigationGraphSO`, `NavInstanceCache`, …) no longer exist. The graph editor + nav rebuild shipped — for current state see [Editor-UX-Roadmap.md](Editor-UX-Roadmap.md) (luna's NavGraph docs were removed in the 2026-06-11 docs purge; the docs site is the home for nav documentation).
 
 # Graphs / BT / Nav — Cleanup Plan
 

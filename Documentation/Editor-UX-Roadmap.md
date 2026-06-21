@@ -28,7 +28,7 @@ Everything below shipped, compiled green, and (where noted) has test coverage. T
 | **Runtime debug overlay** | generic base (`GraphNodeRuntimeState`, `IGraphRuntimeStateSource`, `CreateRuntimeStateSource`, glow + pill render, event-driven) + nav source (live destinations glow) | graphs `cabd9cf` · luna `3039b591` |
 | **BT overlay + generalize** | `IGraphRuntimePollable` (continuous sources) + instance-picker UI; BT source (running/ok/fail); deleted the ad-hoc per-node-polling `BTNodeElement` | graphs `bf3d0af` · bt `3089dc8` |
 
-Design docs: [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md) · [NavGraph-MultiHost-Topology.md](../../com.cupkekgames.luna/Documentation/NavGraph-MultiHost-Topology.md).
+Design docs: [Runtime-Overlay-Design.md](Runtime-Overlay-Design.md) · NavGraph-MultiHost-Topology.md (removed in the 2026-06-11 luna docs purge; recover from luna git history).
 
 ### Skipped / deferred / declined (and why)
 

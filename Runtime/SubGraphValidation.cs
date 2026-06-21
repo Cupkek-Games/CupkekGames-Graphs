@@ -15,12 +15,13 @@ namespace CupkekGames.Graphs
     /// </para>
     ///
     /// <para>
-    /// Comparison is by asset reference — correct at runtime and whenever this runs against
-    /// a resolved / on-disk graph. The editor edits a transient working copy that is
-    /// reference-unequal to the on-disk assets its references point at, so a self-reference
-    /// to the original would slip past reference equality; the editor therefore runs this
-    /// against the on-disk original (resolved when the descend UX wires the footer), not the
-    /// working copy.
+    /// Comparison is by asset reference, made working-copy-aware through
+    /// <c>GraphAssetSO.EditorIdentity</c>: the editor edits a transient clone that is
+    /// reference-unequal to the on-disk assets its references point at, so checks compare
+    /// against the clone's on-disk identity instead of the clone itself. A cycle or
+    /// self-reference introduced in the working copy is therefore reported live in the
+    /// footer, before save. At runtime (and for real assets) the identity is the graph
+    /// itself and this reduces to plain reference equality.
     /// </para>
     /// </summary>
     public static class SubGraphValidation
@@ -28,6 +29,14 @@ namespace CupkekGames.Graphs
         public static IEnumerable<GraphValidationIssue> Validate(GraphAssetSO graph)
         {
             if (graph == null) yield break;
+
+            // The asset this graph IS, for identity purposes. Sub-graph
+            // references always point at on-disk assets, never at a working
+            // copy, so comparing against the identity covers both cases.
+            GraphAssetSO self = graph;
+#if UNITY_EDITOR
+            self = graph.EditorIdentity;
+#endif
 
             foreach (var (node, child) in SubGraphResolver.DirectReferences(graph))
             {
@@ -38,18 +47,19 @@ namespace CupkekGames.Graphs
                     continue;
                 }
 
-                if (ReferenceEquals(child, graph))
+                if (ReferenceEquals(child, graph) || ReferenceEquals(child, self))
                 {
                     yield return Issue(GraphValidationIssue.SeverityLevel.Error,
                         $"Sub-graph node \"{node.DisplayTitle}\" references its own graph (self-reference).", node);
                     continue;
                 }
 
-                // This edge closes a loop iff the child can transitively reach `graph`.
-                if (Reaches(child, graph))
+                // This edge closes a loop iff the child can transitively reach
+                // this graph (via its on-disk identity).
+                if (Reaches(child, self))
                 {
                     yield return Issue(GraphValidationIssue.SeverityLevel.Error,
-                        $"Sub-graph node \"{node.DisplayTitle}\" creates a reference cycle back to \"{graph.name}\".", node);
+                        $"Sub-graph node \"{node.DisplayTitle}\" creates a reference cycle back to \"{self.name}\".", node);
                 }
             }
         }
