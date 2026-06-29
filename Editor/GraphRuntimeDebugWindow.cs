@@ -22,7 +22,7 @@ namespace CupkekGames.Graphs.Editor
     /// </summary>
     public class GraphRuntimeDebugWindow : EditorWindow
     {
-        [MenuItem("Tools/CupkekGames/Graph Runtime Debugger")]
+        [MenuItem("Tools/CupkekGames/Graph Runtime Debugger", false, 201)]
         public static void Open()
         {
             var w = GetWindow<GraphRuntimeDebugWindow>();
