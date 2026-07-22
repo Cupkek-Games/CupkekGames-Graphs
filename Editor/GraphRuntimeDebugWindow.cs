@@ -216,33 +216,57 @@ namespace CupkekGames.Graphs.Editor
             if (_problemsList == null) return;
             _problemsList.Clear();
 
-            int count = 0;
-
-            foreach (var p in GraphProblemRegistry.Collect())
-            {
-                AddProblemRow(p.Severity, p.Message, p.Graph);
-                count++;
-            }
+            // Two scopes, rendered as labeled groups so a provider's project/cross-graph
+            // problems are never mistaken for something wrong with the selected graph.
+            var crossGraph = GraphProblemRegistry.Collect();
 
             // The selected live graph's own per-graph validation (duplicate/missing
             // id, shape rules) — same generic Validate() the editor footer shows.
+            var selected = new List<GraphValidationIssue>();
             if (_selectedGraph != null)
+                selected.AddRange(_selectedGraph.Validate());
+
+            if (crossGraph.Count > 0)
             {
-                foreach (var issue in _selectedGraph.Validate())
-                {
-                    AddProblemRow(issue.Severity, issue.Message, _selectedGraph);
-                    count++;
-                }
+                AddGroupHeader("Cross-graph");
+                foreach (var p in crossGraph)
+                    AddProblemRow(p.Severity, p.Message, p.Graph);
             }
 
-            _problemsFoldout.text = count == 0 ? "Problems" : $"Problems ({count})";
-            if (count == 0)
+            if (selected.Count > 0)
+            {
+                AddGroupHeader($"Selected: {_selectedGraph.name}");
+                foreach (var issue in selected)
+                    AddProblemRow(issue.Severity, issue.Message, _selectedGraph);
+            }
+
+            int total = crossGraph.Count + selected.Count;
+            _problemsFoldout.text = total == 0
+                ? "Problems"
+                : crossGraph.Count > 0 && selected.Count > 0
+                    ? $"Problems ({crossGraph.Count} cross-graph · {selected.Count} selected)"
+                    : $"Problems ({total})";
+            if (total == 0)
             {
                 _problemsList.Add(new Label("No problems.")
                 {
                     style = { color = new Color(0.5f, 0.7f, 0.5f), paddingTop = 2, paddingBottom = 2 },
                 });
             }
+        }
+
+        void AddGroupHeader(string text)
+        {
+            _problemsList.Add(new Label(text)
+            {
+                style =
+                {
+                    color = new Color(0.62f, 0.62f, 0.62f),
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    fontSize = 10,
+                    paddingTop = 4, paddingBottom = 1, paddingLeft = 4,
+                },
+            });
         }
 
         void AddProblemRow(GraphValidationIssue.SeverityLevel severity, string message, GraphAssetSO graph)
