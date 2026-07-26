@@ -325,9 +325,17 @@ namespace CupkekGames.Graphs.Editor
             ApplyCollapsedState();  // honor sidecar-restored Collapsed on first build
 
             // A read-only canvas (the runtime debugger) skips the drag manipulator
-            // so the bound live asset's node positions can't be moved.
+            // so the bound live asset's node positions can't be moved. Click-selection
+            // must still work there — the debugger's Selected pane depends on it — so
+            // read-only cards get a minimal select-on-press handler instead.
             if (!(_canvas?.ReadOnly ?? false))
                 this.AddManipulator(new NodeDragManipulator());
+            else
+                RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 0) return;
+                    _canvas?.Selection.SetTo(this);
+                });
 
             // Double-click handling. Uses MouseDownEvent (not ClickEvent) to
             // match GroupElement's title double-click: the attached

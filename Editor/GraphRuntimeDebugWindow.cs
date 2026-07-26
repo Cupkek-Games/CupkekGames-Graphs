@@ -35,6 +35,9 @@ namespace CupkekGames.Graphs.Editor
         DropdownField _picker;
         VisualElement _canvasHost;
         Label _placeholder;
+        Foldout _detailFoldout;
+        VisualElement _detailList;
+        IGraphRuntimeStateSource _detailBound;
         Foldout _problemsFoldout;
         VisualElement _problemsList;
 
@@ -67,6 +70,7 @@ namespace CupkekGames.Graphs.Editor
             // The live set + the problem set both differ across the play boundary.
             RebuildPicker();
             RefreshProblems();
+            RefreshDetail();
         }
 
         void OnLiveSetChanged() => RebuildPicker();
@@ -117,6 +121,15 @@ namespace CupkekGames.Graphs.Editor
                 },
             };
             _canvasHost.Add(_placeholder);
+
+            // Selected-node detail (only when the live source exposes detail rows).
+            _detailFoldout = new Foldout { text = "Selected", value = true };
+            _detailFoldout.style.borderTopWidth = 1;
+            _detailFoldout.style.borderTopColor = new Color(0f, 0f, 0f, 0.35f);
+            _detailFoldout.style.display = DisplayStyle.None;
+            _detailList = new ScrollView { style = { maxHeight = 130 } };
+            _detailFoldout.Add(_detailList);
+            root.Add(_detailFoldout);
 
             // Problems panel.
             _problemsFoldout = new Foldout { text = "Problems", value = true };
@@ -189,14 +202,76 @@ namespace CupkekGames.Graphs.Editor
             // Position the live nodes from the same sidecar the editor authored.
             GraphLayoutIO.Apply(asset, asset);
             _canvas.BindToAsset(asset);
+            _canvas.Selection.Changed += RefreshDetail;
+            RefreshDetail();
         }
 
         void TeardownCanvas()
         {
+            if (_detailBound != null)
+            {
+                _detailBound.Changed -= RefreshDetail;
+                _detailBound = null;
+            }
             if (_canvas == null) return;
+            _canvas.Selection.Changed -= RefreshDetail;
             // DetachFromPanelEvent → Unbind() + the runtime overlay teardown.
             _canvas.RemoveFromHierarchy();
             _canvas = null;
+        }
+
+        // ── Selected-node detail ────────────────────────────────────
+
+        void RefreshDetail()
+        {
+            if (_detailFoldout == null) return;
+
+            // Track the canvas's live source so nav pushes re-render the open rows.
+            var source = _canvas != null ? _canvas.RuntimeStateSource : null;
+            if (!ReferenceEquals(source, _detailBound))
+            {
+                if (_detailBound != null) _detailBound.Changed -= RefreshDetail;
+                _detailBound = source;
+                if (_detailBound != null) _detailBound.Changed += RefreshDetail;
+            }
+
+            GraphNodeSO node = null;
+            if (_canvas != null)
+            {
+                foreach (var ne in _canvas.Selection.Nodes)
+                {
+                    node = ne != null ? ne.Node : null;
+                    break;
+                }
+            }
+
+            var rows = new List<(string label, string value)>();
+            bool has = node != null
+                && source is IGraphRuntimeDetailSource detail
+                && detail.TryGetDetail(node, rows)
+                && rows.Count > 0;
+
+            _detailFoldout.style.display = has ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!has) return;
+
+            _detailFoldout.text = $"Selected: {node.DisplayTitle}";
+            _detailList.Clear();
+            foreach (var (label, value) in rows)
+            {
+                var row = new VisualElement
+                {
+                    style = { flexDirection = FlexDirection.Row, paddingLeft = 4, paddingRight = 4 },
+                };
+                row.Add(new Label(label)
+                {
+                    style = { minWidth = 90, color = new Color(0.62f, 0.62f, 0.62f) },
+                });
+                row.Add(new Label(value)
+                {
+                    style = { whiteSpace = WhiteSpace.Normal, flexShrink = 1 },
+                });
+                _detailList.Add(row);
+            }
         }
 
         // Resolve the same canvas subclass the editor would use for this asset

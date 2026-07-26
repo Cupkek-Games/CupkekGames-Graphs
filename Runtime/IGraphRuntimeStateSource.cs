@@ -66,5 +66,15 @@ namespace CupkekGames.Graphs
     {
         bool TryGetEdgeColor(GraphNodeSO from, GraphNodeSO to, out UnityEngine.Color color);
     }
+
+    /// <summary>
+    /// Additive capability: a source that can describe one node's live runtime state as
+    /// label/value rows. The Graph Runtime Debugger renders them for the selected node.
+    /// Append rows and return true when the node has detail; return false for none.
+    /// </summary>
+    public interface IGraphRuntimeDetailSource
+    {
+        bool TryGetDetail(GraphNodeSO node, List<(string label, string value)> rows);
+    }
 }
 #endif

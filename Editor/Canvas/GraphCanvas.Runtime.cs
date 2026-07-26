@@ -18,6 +18,10 @@ namespace CupkekGames.Graphs.Editor
     public partial class GraphCanvas
     {
         IGraphRuntimeStateSource _runtimeSource;
+
+        /// <summary>The live state source this canvas created on bind, if any — lets the
+        /// debugger window query additive capabilities (e.g. per-node detail rows).</summary>
+        public IGraphRuntimeStateSource RuntimeStateSource => _runtimeSource;
         PopupField<string> _instancePicker;
 
         // Called once from the ctor.
