@@ -103,7 +103,7 @@ namespace CupkekGames.Graphs.Editor
         // Priority 200 — graph windows band, grouped with the Graph Runtime
         // Debugger (201). Sits between Package Manager (100) and the utility
         // windows (400+); the >10 gaps give Unity's auto-separators on both sides.
-        [MenuItem("Tools/CupkekGames/Graph Editor", false, 200)]
+        [MenuItem("Tools/CupkekGames/Graphs/Graph Editor", false, 300)]
         public static void OpenEmpty() => Open(null);
 
         /// <summary>
