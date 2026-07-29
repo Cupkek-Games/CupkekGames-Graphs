@@ -1,7 +1,7 @@
 {
   "name": "com.cupkekgames.graphs",
   "displayName": "CupkekGames Graphs",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "author": {
     "name": "CupkekGames",
     "url": "https://www.docs.cupkek.games"
@@ -16,7 +16,7 @@
     "CupkekGames"
   ],
   "dependencies": {
-    "com.cupkekgames.data": "0.3.0",
+    "com.cupkekgames.data": "0.3.1",
     "com.cupkekgames.editorui": "0.1.1"
   }
 }
