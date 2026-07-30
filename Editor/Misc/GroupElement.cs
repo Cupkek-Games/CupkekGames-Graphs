@@ -239,6 +239,7 @@ namespace CupkekGames.Graphs.Editor
         {
             if (evt.button != (int)MouseButton.LeftMouse || evt.altKey) return;
             if (_dragging || _resizing) return;
+            if (_canvas.ReadOnly) return; // debugger canvas: frames are display-only
 
             // Double-click the title bar → rename. Detected by timing (see field note)
             // and handled BEFORE arming the drag, so the drag's pointer-capture can't
@@ -344,6 +345,7 @@ namespace CupkekGames.Graphs.Editor
         {
             if (evt.button != (int)MouseButton.LeftMouse || evt.altKey) return;
             if (_dragging || _resizing) return;
+            if (_canvas.ReadOnly) return; // debugger canvas: frames are display-only
 
             _resizing = true;
             _pointerId = evt.pointerId;

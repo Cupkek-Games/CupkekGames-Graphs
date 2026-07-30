@@ -7,12 +7,14 @@ using UnityEngine.UIElements;
 namespace CupkekGames.Graphs.Editor
 {
     /// <summary>
-    /// Live runtime debugger for <b>every</b> mounted graph at once — pick one from the
-    /// dropdown (populated by <see cref="GraphRuntimeRegistry"/>) and watch its read-only
-    /// canvas paint each node's live state in play mode (whatever the graph's
-    /// <see cref="GraphAssetSO.CreateRuntimeStateSource"/> reports). A Problems panel
-    /// aggregates <see cref="GraphProblemRegistry"/> providers plus the selected graph's
-    /// own <see cref="GraphAssetSO.Validate"/>, both at edit time and in play.
+    /// Live runtime debugger for <b>every</b> mounted graph at once. The picker defaults
+    /// to an "All mounted" merged view (one transient composite of every live graph of a
+    /// type, clustered per host with labeled frames — see <see cref="MergedGraphBuilder"/>),
+    /// mirroring runtimes that union mounted graphs into one id space; individual graphs
+    /// remain pickable. The read-only canvas paints each node's live state in play mode
+    /// (whatever the graph's <see cref="GraphAssetSO.CreateRuntimeStateSource"/> reports).
+    /// A Problems panel aggregates <see cref="GraphProblemRegistry"/> providers plus
+    /// per-graph <see cref="GraphAssetSO.Validate"/>, both at edit time and in play.
     ///
     /// <para>
     /// Fully generic: it knows nothing of nav / behaviour-trees / any consumer. A graph
@@ -44,6 +46,14 @@ namespace CupkekGames.Graphs.Editor
         GraphCanvas _canvas;
         GraphAssetSO _selectedGraph;
         List<GraphRuntimeRegistry.Entry> _entries = new();
+
+        // "All mounted" merged view: one transient composite per concrete graph type
+        // with 2+ live graphs (see MergedGraphBuilder). The composite is rebuilt on
+        // every live-set change and destroyed on rebind/close.
+        GraphAssetSO _composite;
+        bool _mergedSelected;
+        Type _mergedType;
+        readonly List<Type> _mergedTypes = new();
 
         void OnEnable()
         {
@@ -149,40 +159,83 @@ namespace CupkekGames.Graphs.Editor
 
             _entries = new List<GraphRuntimeRegistry.Entry>(GraphRuntimeRegistry.Live);
 
-            var choices = new List<string>(_entries.Count);
+            // Merged choices first: one "All mounted" per concrete graph type with 2+
+            // live graphs (a single graph's merged view adds nothing over the graph).
+            _mergedTypes.Clear();
+            var counts = new Dictionary<Type, int>();
+            for (int i = 0; i < _entries.Count; i++)
+            {
+                var g = _entries[i].Graph;
+                if (g == null) continue;
+                counts.TryGetValue(g.GetType(), out int k);
+                counts[g.GetType()] = k + 1;
+            }
+            foreach (var t in MergedGraphBuilder.LiveTypes(_entries))
+                if (counts[t] >= 2) _mergedTypes.Add(t);
+
+            var choices = new List<string>(_mergedTypes.Count + _entries.Count);
+            for (int i = 0; i < _mergedTypes.Count; i++)
+                choices.Add(_mergedTypes.Count == 1
+                    ? $"All mounted ({counts[_mergedTypes[i]]} graphs)"
+                    : $"All mounted: {_mergedTypes[i].Name} ({counts[_mergedTypes[i]]})");
             for (int i = 0; i < _entries.Count; i++)
                 choices.Add(string.IsNullOrEmpty(_entries[i].Label) ? "(unnamed graph)" : _entries[i].Label);
 
-            // Preserve the current selection by graph reference; else first; else none.
+            // Preserve the current selection: merged stays merged (by type), an
+            // individual graph is matched by reference; else default to the first
+            // choice, which is the merged view whenever one exists.
             int sel = -1;
-            for (int i = 0; i < _entries.Count; i++)
-                if (_entries[i].Graph == _selectedGraph) { sel = i; break; }
-            if (sel < 0) sel = _entries.Count > 0 ? 0 : -1;
+            if (_mergedSelected)
+            {
+                for (int i = 0; i < _mergedTypes.Count; i++)
+                    if (_mergedTypes[i] == _mergedType) { sel = i; break; }
+            }
+            else
+            {
+                for (int i = 0; i < _entries.Count; i++)
+                    if (_entries[i].Graph == _selectedGraph) { sel = _mergedTypes.Count + i; break; }
+            }
+            if (sel < 0) sel = choices.Count > 0 ? 0 : -1;
 
             _picker.choices = choices;
-            _picker.style.display = _entries.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            _picker.style.display = choices.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
             if (sel >= 0)
             {
                 _picker.SetValueWithoutNotify(choices[sel]);
                 _picker.index = sel;
             }
 
-            var newSelected = sel >= 0 ? _entries[sel].Graph : null;
-            if (newSelected != _selectedGraph || (newSelected != null && _canvas == null))
-            {
-                _selectedGraph = newSelected;
-                RebindCanvas(_selectedGraph);
-                RefreshProblems();
-            }
+            ApplySelection(sel, force: false);
         }
 
-        void OnPickerChanged()
+        void OnPickerChanged() => ApplySelection(_picker.index, force: true);
+
+        void ApplySelection(int sel, bool force)
         {
-            int i = _picker.index;
-            var g = (i >= 0 && i < _entries.Count) ? _entries[i].Graph : null;
-            if (g == _selectedGraph) return;
-            _selectedGraph = g;
-            RebindCanvas(g);
+            bool merged = sel >= 0 && sel < _mergedTypes.Count;
+
+            if (merged)
+            {
+                _mergedSelected = true;
+                _mergedType = _mergedTypes[sel];
+                _selectedGraph = null;
+                // Always rebuild: reaching here means the live set or the selection
+                // changed, and the composite must reflect the current live set.
+                var next = MergedGraphBuilder.Build(_entries, _mergedType);
+                RebindCanvas(next); // teardown inside destroys the previous composite
+                _composite = next;
+                RefreshProblems();
+                return;
+            }
+
+            int entryIndex = sel - _mergedTypes.Count;
+            var graph = entryIndex >= 0 && entryIndex < _entries.Count ? _entries[entryIndex].Graph : null;
+            bool changed = _mergedSelected || graph != _selectedGraph || (graph != null && _canvas == null);
+            _mergedSelected = false;
+            _mergedType = null;
+            if (!changed && !force) return;
+            _selectedGraph = graph;
+            RebindCanvas(graph);
             RefreshProblems();
         }
 
@@ -213,11 +266,18 @@ namespace CupkekGames.Graphs.Editor
                 _detailBound.Changed -= RefreshDetail;
                 _detailBound = null;
             }
-            if (_canvas == null) return;
-            _canvas.Selection.Changed -= RefreshDetail;
-            // DetachFromPanelEvent → Unbind() + the runtime overlay teardown.
-            _canvas.RemoveFromHierarchy();
-            _canvas = null;
+            if (_canvas != null)
+            {
+                _canvas.Selection.Changed -= RefreshDetail;
+                // DetachFromPanelEvent → Unbind() + the runtime overlay teardown.
+                _canvas.RemoveFromHierarchy();
+                _canvas = null;
+            }
+            if (_composite != null)
+            {
+                UnityEngine.Object.DestroyImmediate(_composite);
+                _composite = null;
+            }
         }
 
         // ── Selected-node detail ────────────────────────────────────
@@ -295,11 +355,26 @@ namespace CupkekGames.Graphs.Editor
             // problems are never mistaken for something wrong with the selected graph.
             var crossGraph = GraphProblemRegistry.Collect();
 
-            // The selected live graph's own per-graph validation (duplicate/missing
-            // id, shape rules) — same generic Validate() the editor footer shows.
-            var selected = new List<GraphValidationIssue>();
-            if (_selectedGraph != null)
-                selected.AddRange(_selectedGraph.Validate());
+            // Per-graph validation (duplicate/missing id, shape rules) — the selected
+            // graph, or every source graph of the merged view. The composite itself is
+            // never validated: its unioned nodes would re-report cross-graph duplicate
+            // ids the providers above already cover.
+            var perGraph = new List<(string header, GraphAssetSO graph, List<GraphValidationIssue> issues)>();
+            if (_mergedSelected)
+            {
+                for (int i = 0; i < _entries.Count; i++)
+                {
+                    var g = _entries[i].Graph;
+                    if (g == null || g.GetType() != _mergedType) continue;
+                    var issues = new List<GraphValidationIssue>(g.Validate());
+                    if (issues.Count > 0) perGraph.Add(($"Mounted: {g.name}", g, issues));
+                }
+            }
+            else if (_selectedGraph != null)
+            {
+                var issues = new List<GraphValidationIssue>(_selectedGraph.Validate());
+                if (issues.Count > 0) perGraph.Add(($"Selected: {_selectedGraph.name}", _selectedGraph, issues));
+            }
 
             if (crossGraph.Count > 0)
             {
@@ -308,18 +383,20 @@ namespace CupkekGames.Graphs.Editor
                     AddProblemRow(p.Severity, p.Message, p.Graph);
             }
 
-            if (selected.Count > 0)
+            int perGraphTotal = 0;
+            foreach (var (header, graph, issues) in perGraph)
             {
-                AddGroupHeader($"Selected: {_selectedGraph.name}");
-                foreach (var issue in selected)
-                    AddProblemRow(issue.Severity, issue.Message, _selectedGraph);
+                AddGroupHeader(header);
+                foreach (var issue in issues)
+                    AddProblemRow(issue.Severity, issue.Message, graph);
+                perGraphTotal += issues.Count;
             }
 
-            int total = crossGraph.Count + selected.Count;
+            int total = crossGraph.Count + perGraphTotal;
             _problemsFoldout.text = total == 0
                 ? "Problems"
-                : crossGraph.Count > 0 && selected.Count > 0
-                    ? $"Problems ({crossGraph.Count} cross-graph · {selected.Count} selected)"
+                : crossGraph.Count > 0 && perGraphTotal > 0
+                    ? $"Problems ({crossGraph.Count} cross-graph · {perGraphTotal} graph)"
                     : $"Problems ({total})";
             if (total == 0)
             {
