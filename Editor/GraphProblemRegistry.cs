@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Scripting.LifecycleManagement;
 
 namespace CupkekGames.Graphs.Editor
 {
@@ -32,11 +33,13 @@ namespace CupkekGames.Graphs.Editor
     /// problem <i>means</i>. Providers run on demand (the window pulls), so they can be
     /// as cheap or thorough as the consumer likes.
     /// </summary>
-    public static class GraphProblemRegistry
+    public static partial class GraphProblemRegistry
     {
+        [NoAutoStaticsCleanup]
         static readonly List<Func<IEnumerable<GraphProblem>>> _providers = new();
 
         /// <summary>Raised when the provider set changes so an open debugger can refresh.</summary>
+        [NoAutoStaticsCleanup]
         public static event Action Changed;
 
         public static void RegisterProvider(Func<IEnumerable<GraphProblem>> provider)

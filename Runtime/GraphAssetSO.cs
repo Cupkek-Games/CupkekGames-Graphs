@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Scripting.LifecycleManagement;
 
 namespace CupkekGames.Graphs
 {
@@ -10,7 +11,7 @@ namespace CupkekGames.Graphs
     /// Subclasses constrain the node type via <see cref="NodeBaseType"/>
     /// and add domain-specific behaviour (runtime traversal, validation, ...).
     /// </summary>
-    public abstract class GraphAssetSO : ScriptableObject
+    public abstract partial class GraphAssetSO : ScriptableObject
     {
         [SerializeField] internal List<GraphNodeSO> _nodes = new List<GraphNodeSO>();
         [SerializeField] internal List<GraphConnection> _connections = new List<GraphConnection>();
@@ -83,6 +84,7 @@ namespace CupkekGames.Graphs
         /// after <c>serializedObject.ApplyModifiedProperties()</c>.
         /// Stripped from runtime builds.
         /// </summary>
+        [AutoStaticsCleanup]
         public static event Action<GraphAssetSO> EditorAssetMutated;
 
         /// <summary>Editor-only — raise <see cref="EditorAssetMutated"/> for this asset.</summary>

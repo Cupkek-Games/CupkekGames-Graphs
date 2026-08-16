@@ -4,6 +4,7 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Unity.Scripting.LifecycleManagement;
 
 namespace CupkekGames.Graphs.Editor
 {
@@ -21,8 +22,9 @@ namespace CupkekGames.Graphs.Editor
     ///   <item>Escape closes the popup without creating anything.</item>
     /// </list>
     /// </summary>
-    public class NodeSearchPopup : EditorWindow
+    public partial class NodeSearchPopup : EditorWindow
     {
+        [AutoStaticsCleanup]
         static NodeSearchPopup s_open;
 
         const float PopupWidth = 280f;

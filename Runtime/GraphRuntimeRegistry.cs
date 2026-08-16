@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Unity.Scripting.LifecycleManagement;
 
 namespace CupkekGames.Graphs
 {
@@ -25,7 +26,7 @@ namespace CupkekGames.Graphs
     /// shipped cost and no <c>#if</c> at the call site.
     /// </para>
     /// </summary>
-    public static class GraphRuntimeRegistry
+    public static partial class GraphRuntimeRegistry
     {
         /// <summary>A live graph: the asset + a human label for the picker.</summary>
         public readonly struct Entry
@@ -38,9 +39,16 @@ namespace CupkekGames.Graphs
 #if UNITY_EDITOR
         sealed class LiveGraph { public GraphAssetSO Graph; public string Label; public int Count; }
 
+        [NoAutoStaticsCleanup]
         static readonly List<LiveGraph> _live = new();
 
-        /// <summary>Raised whenever the live set changes (add / remove / relabel).</summary>
+        /// <summary>
+        /// Raised whenever the live set changes (add / remove / relabel).
+        /// Not auto-cleaned: subscribers are editor windows that subscribe in OnEnable and
+        /// stay alive across play-mode transitions, so clearing this would silently stop
+        /// their refresh for the rest of the editor session.
+        /// </summary>
+        [NoAutoStaticsCleanup]
         public static event Action Changed;
 
         /// <summary>Every graph asset with live runtime state, in registration order.</summary>
@@ -56,9 +64,13 @@ namespace CupkekGames.Graphs
         }
 
         // Static state survives "Enter Play Mode Without Domain Reload"; a leftover
-        // entry from a prior run would linger. Clear at every play-enter — consumers
-        // re-register in their Awake. Mirrors the other CupkekGames static resets.
-        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        // entry from a prior run would linger. Clear at every play boundary — consumers
+        // re-register in their Awake. A hook rather than [AutoStaticsCleanup] because the
+        // listeners still have to be notified after the clear.
+        [NoAutoStaticsCleanup]
+        static readonly UnityEngine.DelegateAutoCleanup _autoCleanup =
+            UnityEngine.DelegateAutoCleanup.CreateForPlayMode(ResetStatics, "CupkekGames.Graphs.GraphRuntimeRegistry");
+
         static void ResetStatics()
         {
             _live.Clear();

@@ -6,7 +6,7 @@
     "name": "CupkekGames",
     "url": "https://www.docs.cupkek.games"
   },
-  "unity": "6000.0",
+  "unity": "6000.5",
   "documentationUrl": "https://docs.cupkek.games/",
   "description": "Generic graph editing foundation. GraphAssetSO + GraphNodeSO + GraphConnection runtime abstractions plus a fully custom UI Toolkit canvas editor (no UnityEditor.Experimental.GraphView dependency). Foundation for behaviour trees, navigation graphs, and other graph-shaped CupkekGames features.",
   "keywords": [
