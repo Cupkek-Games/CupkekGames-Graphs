@@ -145,8 +145,8 @@ namespace CupkekGames.Graphs.Editor
             set { _viewZoom = Mathf.Clamp(value, MinZoom, MaxZoom); ApplyTransform(); }
         }
 
-        /// <summary>Package-absolute path to the shared editor stylesheet.</summary>
-        const string StyleSheetPath = "Packages/com.cupkekgames.graphs/Editor/GraphEditor.uss";
+        /// <summary>GUID of the shared editor stylesheet (GraphEditor.uss).</summary>
+        const string StyleSheetGuid = "53728190367ed774fbbbbe647c4d2176";
 
         public GraphCanvas()
         {
@@ -160,10 +160,12 @@ namespace CupkekGames.Graphs.Editor
             // Attach the shared visual foundation. Class names + state
             // modifiers in GraphEditor.uss (cgg-graph-node, --selected /
             // --hover / --start, cgg-graph-port, --candrop / --incompatible)
-            // are toggled in C# by later interaction streams. Loaded by its
-            // package-absolute path so it resolves regardless of how the
-            // package is consumed (registry / file: override).
-            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(StyleSheetPath);
+            // are toggled in C# by later interaction streams. Loaded by GUID
+            // so it resolves wherever the package's files live: registry,
+            // file: override, or folded inside another package (the Luna
+            // Asset Store build carries graphs under its own folder).
+            var sheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
+                AssetDatabase.GUIDToAssetPath(StyleSheetGuid));
             if (sheet != null)
                 styleSheets.Add(sheet);
 
